@@ -1,2 +1,7 @@
 Bon on va repartir propre
-Cette autre ligne serait au milieu
+1
+2
+4
+5
+7
+8
