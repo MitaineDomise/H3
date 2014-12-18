@@ -1,5 +1,2 @@
 Testes
 Testahe d'une branche experimentale
-
-Expérimentation supplémentaire
-
