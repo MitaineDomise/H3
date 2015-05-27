@@ -126,11 +126,11 @@ class SetupWizard(QtGui.QWidget):
         self.user_ok = False
         self.pw_ok = False
 
-        self.wizard = QtUiTools.QUiLoader()
-        self.wizard.registerCustomWidget(ServerWizardPage)
-        self.wizard.registerCustomWidget(LoginWizardPage)
-        self.wizard.registerCustomWidget(RecapWizardPage)
-        self.wizard = QtUiTools.QUiLoader().load(QtCore.QFile("GUI/QtDesigns/Wizard.ui"), self)
+        loader = QtUiTools.QUiLoader()
+        loader.registerCustomWidget(ServerWizardPage)
+        loader.registerCustomWidget(LoginWizardPage)
+        loader.registerCustomWidget(RecapWizardPage)
+        self.wizard = loader.load(QtCore.QFile("GUI/QtDesigns/Wizard.ui"), self)
 
         logo_template = QtGui.QPixmap(":/GUI/images/H3wizardlogo.png")
         self.wizard.setPixmap(QtGui.QWizard.LogoPixmap, logo_template)

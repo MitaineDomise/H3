@@ -249,7 +249,7 @@ class H3AlchemyCore():
 
     def ping_remote(self, address):
         temp_remote_db = H3AlchemyRemoteDB(self, address)
-        if temp_remote_db.login('H3reader', 'weak'):
+        if temp_remote_db.login('reader', 'weak'):
             return 1
         else:
             return 0
