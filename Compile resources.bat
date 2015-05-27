@@ -1,0 +1,1 @@
+D:\Qt\4.8.6\bin\rcc C:\Users\Man\Documents\GitHub\H3\H3.qrc -binary -o C:\Users\Man\Documents\GitHub\H3\H3.rcc

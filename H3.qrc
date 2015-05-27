@@ -1,0 +1,9 @@
+<RCC>
+  <qresource>
+    <file>GUI/images/H3.png</file>
+    <file>GUI/images/H3.svg</file>
+    <file>GUI/images/H3big.png</file>
+    <file>GUI/images/H3wizardbg.png</file>
+    <file>GUI/images/H3wizardlogo.png</file>
+  </qresource>
+</RCC>
