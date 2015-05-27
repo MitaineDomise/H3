@@ -4,13 +4,14 @@ import datetime
 import logging
 import hashlib
 
-import AlchemyClassDefs as Acd
-
 import sqlalchemy
 import sqlalchemy.exc
 import sqlalchemy.orm
 import sqlalchemy.engine
 import sqlalchemy.engine.url
+
+import AlchemyClassDefs as Acd
+
 
 SessionRemote = sqlalchemy.orm.sessionmaker()
 logger = logging.getLogger(__name__)
@@ -42,8 +43,9 @@ class H3AlchemyRemoteDB():
         :return:
         """
         try:
+            hashed_login = hashlib.md5('H3' + username).hexdigest()
             self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
-                                                                             username=username,
+                                                                             username=hashed_login,
                                                                              password=password,
                                                                              host=self.location,
                                                                              port=5002,
@@ -64,7 +66,6 @@ class H3AlchemyRemoteDB():
         :param new_pass: new plain password
         :return:
         """
-        # TODO : normal users can't write in the users table. Put a trigger on pg_auth ?
         # Trigger on users : can UPDATE self only.
         # OR have this sent as a ticket to root.
 
@@ -127,7 +128,8 @@ class H3AlchemyRemoteDB():
 
     def create_user(self, user):
         """
-        Creates a new user slot to be later setup, at app- and SQL levels
+        Creates a new user slot to be later setup, at app- and SQL levels.
+        SQL-level is salted a bit and hashed, to obfuscate the raw connection to remote
         :param user:
         :return:
         """
@@ -138,18 +140,20 @@ class H3AlchemyRemoteDB():
         session = None
         conn = None
         try:
+            hashed_login = hashlib.md5('H3' + user.login).hexdigest()
             session = SessionRemote()
+
+            # SQL-level
+            conn = self.engine.connect()
+            query = sqlalchemy.text('CREATE USER {login} WITH PASSWORD \'{password}\';'
+                                    .format(login=hashed_login, password=(user.login + 'YOUPIE')))
+
+            conn.execute("COMMIT;")  # have to clear the transaction before CREATE
+            conn.execute(query)
 
             # App-level
             session.add(user)
 
-            # SQL-level
-            conn = self.engine.connect()
-            query = sqlalchemy.text('CREATE USER {login} WITH PASSWORD \'YOUPIE\';'
-                                    .format(login=user.login))
-
-            conn.execute("COMMIT;")  # have to clear the transaction before CREATE
-            conn.execute(query)
             session.commit()
 
             return True
@@ -295,22 +299,22 @@ class H3AlchemyRemoteDB():
             .order_by(Acd.Job.base).all()
         return ret
 
-    def has_a_base(self):
-        """
-        If there's at least one base in this DB (ie this is a valid H3 DB) will return True.
-        :return:
-        """
-        try:
-            self.login("reader", "weak")
-            session = SessionRemote()
-            if session.query(Acd.WorkBase).count() > 0:
-                return True
-            else:
-                return False
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Unable to query the remote DB at {address}")
-                             .format(address=self.location))
-            return False
+    # def has_a_base(self):
+    # """
+    # If there's at least one base in this DB (ie this is a valid H3 DB) will return True.
+    #     :return:
+    #     """
+    #     try:
+    #         self.login("reader", "weak")
+    #         session = SessionRemote()
+    #         if session.query(Acd.WorkBase).count() > 0:
+    #             return True
+    #         else:
+    #             return False
+    #     except sqlalchemy.exc.SQLAlchemyError:
+    #         logger.exception(_("Unable to query the remote DB at {address}")
+    #                          .format(address=self.location))
+    #         return False
 
     def get_current_job(self, user):
         """

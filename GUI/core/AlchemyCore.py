@@ -7,6 +7,7 @@ from AlchemyLocal import H3AlchemyLocalDB
 from AlchemyRemote import H3AlchemyRemoteDB
 import AlchemyClassDefs as Acd
 
+
 logger = logging.getLogger(__name__)
 
 
@@ -38,7 +39,6 @@ class H3AlchemyCore():
         Checks that options are set for local and remote DB locations plus a current user;
         If local DB is valid (ping returns true), will try to update that user's details and return True.
         """
-
         if self.options.read('config.txt'):
             if (self.options.has_option('DB Locations', 'local') and
                self.options.has_option('DB Locations', 'remote')):
@@ -80,7 +80,7 @@ class H3AlchemyCore():
         else:
             self.current_user = self.remote_db.get_user(username)
             if self.current_user:
-                if self.remote_db.login(username, 'YOUPIE'):
+                if self.remote_db.login(username, username + 'YOUPIE'):
                     self.user_state = "new"
                 else:
                     self.user_state = "remote"
@@ -143,7 +143,7 @@ class H3AlchemyCore():
             local_bases_list = self.local_db.get_local_bases()
             unique_bases = []
             for val in local_bases_list:
-                unique_bases.append(val[0])
+                unique_bases.append(val[0])  # TODO: would that work with named tuple access ? (.id)
 
             if unicode(self.current_job.base) not in unique_bases:
                 self.user_state = "new_base"
@@ -248,10 +248,8 @@ class H3AlchemyCore():
             return -1  # No file here, OK to create
 
     def ping_remote(self, address):
-        if address == "":
-            return 0
         temp_remote_db = H3AlchemyRemoteDB(self, address)
-        if temp_remote_db.has_a_base():
+        if temp_remote_db.login('H3reader', 'weak'):
             return 1
         else:
             return 0

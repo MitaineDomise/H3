@@ -8,6 +8,7 @@ from PySide import QtGui, QtCore, QtSql, QtUiTools
 
 from core.AlchemyCore import H3AlchemyCore  # Trying to keep application logic separate from the UI code
 
+
 logger = logging.getLogger(__name__)
 H3Core = H3AlchemyCore()
 
@@ -276,20 +277,22 @@ class SetupWizard(QtGui.QWidget):
         """
         Tries to get a response from a H3 remote DB
         """
-        remote_db_exists = H3Core.ping_remote(self.wizard.remoteAddress.text())
-        temp_remote_ok = self.remote_ok
-        if remote_db_exists == 1:
-            self.wizard.remoteDBstatus.setText(_("Successfully contacted H3 DB at {location}")
-                                               .format(location=self.wizard.remoteAddress.text()))
-            temp_remote_ok = True
-        else:
-            assert remote_db_exists == 0
-            self.wizard.remoteDBstatus.setText(_("Unable to reach a H3 DB at {location}")
-                                               .format(location=self.wizard.remoteAddress.text()))
-            temp_remote_ok = False
-        if temp_remote_ok != self.remote_ok:
-            self.remote_ok = temp_remote_ok
-            self.wizard.wizardPage2.completeChanged.emit()
+        location = self.wizard.remoteAddress.text()
+        if location != "":
+            remote_db_exists = H3Core.ping_remote(location)
+            temp_remote_ok = self.remote_ok
+            if remote_db_exists == 1:
+                self.wizard.remoteDBstatus.setText(_("Successfully contacted H3 DB at {location}")
+                                                   .format(location=self.wizard.remoteAddress.text()))
+                temp_remote_ok = True
+            else:
+                assert remote_db_exists == 0
+                self.wizard.remoteDBstatus.setText(_("Unable to reach a H3 DB at {location}")
+                                                   .format(location=self.wizard.remoteAddress.text()))
+                temp_remote_ok = False
+            if temp_remote_ok != self.remote_ok:
+                self.remote_ok = temp_remote_ok
+                self.wizard.wizardPage2.completeChanged.emit()
 
     def invalidate_remote(self):
         if self.remote_ok:
