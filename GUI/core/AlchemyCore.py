@@ -142,8 +142,8 @@ class H3AlchemyCore():
 
             local_bases_list = self.local_db.get_local_bases()
             unique_bases = []
-            for val in local_bases_list:
-                unique_bases.append(val[0])  # TODO: would that work with named tuple access ? (.id)
+            for base in local_bases_list:
+                unique_bases.append(base.id)  # TODO: would that work with named tuple access ? (.id)
 
             if unicode(self.current_job.base) not in unique_bases:
                 self.user_state = "new_base"
