@@ -9,10 +9,10 @@ import sqlalchemy.exc
 import sqlalchemy.orm
 import sqlalchemy.engine
 import sqlalchemy.engine.url
-
 from sqlalchemy.event import listen
 
 import AlchemyClassDefs as Acd
+
 
 SessionLocal = sqlalchemy.orm.sessionmaker()
 logger = logging.getLogger(__name__)
@@ -109,10 +109,10 @@ class H3AlchemyLocalDB():
         try:
             session = SessionLocal()
             current_job = session.query(Acd.Job) \
-                                 .filter(Acd.Job.user == user.login) \
-                                 .filter(Acd.Job.start_date <= datetime.date.today(),
-                                         Acd.Job.end_date >= datetime.date.today()) \
-                                 .one()
+                .filter(Acd.JobContract.user == user.login) \
+                .filter(Acd.JobContract.start_date <= datetime.date.today(),
+                        Acd.JobContract.end_date >= datetime.date.today()) \
+                .one()
             logger.debug(_("Active job found in local for user {name} : {job} - {title}")
                          .format(name=user.login, job=current_job.job_code, title=current_job.job_title))
             return current_job

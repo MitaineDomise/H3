@@ -6,11 +6,11 @@ import logging
 
 from PySide import QtGui, QtCore, QtSql, QtUiTools
 
-from core.AlchemyCore import H3AlchemyCore  # Trying to keep application logic separate from the UI code
+from core.AlchemyCore import H3AlchemyCore
 
+H3Core = H3AlchemyCore()
 
 logger = logging.getLogger(__name__)
-H3Core = H3AlchemyCore()
 
 
 class H3MainGUI(QtGui.QWidget):
@@ -735,3 +735,7 @@ def run():
     h3app = QtGui.QApplication(sys.argv)
     H3MainGUI()
     h3app.exec_()
+
+
+def init_remote(location):
+    H3Core.init_remote(location)

@@ -87,8 +87,7 @@ class H3AlchemyRemoteDB():
                 session.merge(user)
                 print 'merged'
 
-
-            # SQL-level
+            # SQL-level, will fail if not for self
             query = sqlalchemy.text('ALTER ROLE {name} WITH PASSWORD \'{password}\';'
                                     .format(name=username, password=new_pass))
 
@@ -113,13 +112,9 @@ class H3AlchemyRemoteDB():
         try:
             # SQLAlchemy level
 
-            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
-                                                                             username=user,
-                                                                             password=new_pass,
-                                                                             host=self.location,
-                                                                             port=5002,
-                                                                             database='H3A'))
+            self.login(user, new_pass)
             self.engine.connect()
+
             return True
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Password change has failed for {name}; login has been denied with the new password.")
@@ -133,7 +128,7 @@ class H3AlchemyRemoteDB():
         :param user:
         :return:
         """
-        # TODO: Revamp that - Focal Points should have role creation rights. Then contracts are per-base.
+        # TODO: Revamp that - Focal Points should have role creation rights.
         # Trigger on users : only FPs can INSERT
 
         # Maybe should be raw SQL to be absolutely sure of clean rollback ?
@@ -175,7 +170,6 @@ class H3AlchemyRemoteDB():
         :param base:
         :return:
         """
-        # TODO : FPs can write in "bases" ?
         session = None
         conn = None
         try:
@@ -239,32 +233,34 @@ class H3AlchemyRemoteDB():
         :return:
         """
         session = SessionRemote()
-        jobs = session.query(Acd.Job) \
-                      .filter(Acd.Job.user == username) \
-                      .order_by(Acd.Job.start_date) \
-                      .all()
+        jobs = session.query(Acd.JobContract) \
+            .filter(Acd.JobContract.user == username) \
+            .order_by(Acd.JobContract.start_date) \
+            .all()
         if jobs:
             return jobs
         else:
             logger.info(_("No current contract."))
             return None
 
-    def init_public_tables(self):
+    def initialize(self):
         """
         Format the main database on initial setup and gives read access to all tables to h3_users
         :return:
         """
-        # TODO: Initial setup invoked through CLI; public tables only. also create the initial roles root and h3_users
-        # self.login('rolemaker', 'secret')
-        # No rolemaker here; using PG root access.
+        # TODO: also create the initial roles root and h3_users; grant INSERT to FPs
+        self.login('reader', 'weak')
         meta = Acd.Base.metadata
         conn = self.engine.connect()
         try:
             meta.create_all(bind=self.engine)
+            logger.debug(_("All tables created in remote"))
             for table in meta.tables.values():
                 conn.execute("COMMIT;")  # have to clear the transaction before CREATE
                 query = sqlalchemy.text('GRANT SELECT ON TABLE {table_name} TO h3_users WITH GRANT OPTION;'
                                         .format(table_name=table.key))
+                logger.debug(_("SELECT right granted to group h3_users on table {table_name}")
+                             .format(table_name=table.key))
                 conn.execute(query)
             return True
         except sqlalchemy.exc.SQLAlchemyError:
@@ -277,7 +273,7 @@ class H3AlchemyRemoteDB():
         :param class_of_table:
         :return:
         """
-        self.login('reader', 'weak')
+        self.login('reader', 'weak')  # Used by wizard when no user is yet logged, to get hierarchy
         session = SessionRemote()
         return session.query(class_of_table).all()
 
@@ -287,34 +283,17 @@ class H3AlchemyRemoteDB():
         :param bases_list:
         :return:
         """
-        self.login('reader', 'weak')
+        # self.login('reader', 'weak')
         session = SessionRemote()
         ret = session.query(Acd.User.login,
                             Acd.User.first_name,
                             Acd.User.last_name,
-                            Acd.Job.job_title,
-                            Acd.Job.base)\
-            .filter(Acd.User.login == Acd.Job.user)\
-            .filter(Acd.Job.base.in_(bases_list))\
-            .order_by(Acd.Job.base).all()
+                            Acd.JobContract.job_title,
+                            Acd.JobContract.base) \
+            .filter(Acd.User.login == Acd.JobContract.user) \
+            .filter(Acd.JobContract.base.in_(bases_list)) \
+            .order_by(Acd.JobContract.base).all()
         return ret
-
-    # def has_a_base(self):
-    # """
-    # If there's at least one base in this DB (ie this is a valid H3 DB) will return True.
-    #     :return:
-    #     """
-    #     try:
-    #         self.login("reader", "weak")
-    #         session = SessionRemote()
-    #         if session.query(Acd.WorkBase).count() > 0:
-    #             return True
-    #         else:
-    #             return False
-    #     except sqlalchemy.exc.SQLAlchemyError:
-    #         logger.exception(_("Unable to query the remote DB at {address}")
-    #                          .format(address=self.location))
-    #         return False
 
     def get_current_job(self, user):
         """
@@ -324,11 +303,11 @@ class H3AlchemyRemoteDB():
         """
         try:
             session = SessionRemote()
-            current_job = session.query(Acd.Job) \
-                                 .filter(Acd.Job.user == user.login) \
-                                 .filter(Acd.Job.start_date <= datetime.date.today(),
-                                         Acd.Job.end_date >= datetime.date.today()) \
-                                 .one()
+            current_job = session.query(Acd.JobContract) \
+                .filter(Acd.JobContract.user == user.login) \
+                .filter(Acd.JobContract.start_date <= datetime.date.today(),
+                        Acd.JobContract.end_date >= datetime.date.today()) \
+                .one()
             logger.debug(_("Active job found in remote for user {name} : {job} - {title}")
                          .format(name=user.login, job=current_job.job_code, title=current_job.job_title))
             return current_job

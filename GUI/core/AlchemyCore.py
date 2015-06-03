@@ -143,7 +143,7 @@ class H3AlchemyCore():
             local_bases_list = self.local_db.get_local_bases()
             unique_bases = []
             for base in local_bases_list:
-                unique_bases.append(base.id)  # TODO: would that work with named tuple access ? (.id)
+                unique_bases.append(base.id)  # TODO: will that work with named tuple access ? (.id)
 
             if unicode(self.current_job.base) not in unique_bases:
                 self.user_state = "new_base"
@@ -254,3 +254,6 @@ class H3AlchemyCore():
         else:
             return 0
 
+    def init_remote(self, location):
+        self.remote_db = H3AlchemyRemoteDB(None, location)
+        self.remote_db.initialize()
