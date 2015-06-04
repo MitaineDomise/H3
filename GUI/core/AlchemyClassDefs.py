@@ -16,6 +16,8 @@ class WorkBase(Base):
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
     closed_date = sqlalchemy.Column(sqlalchemy.Date)
+
+    country = sqlalchemy.Column(sqlalchemy.String(2))  # 2-char country code, ISO-3166
     time_zone = sqlalchemy.Column(sqlalchemy.String)
 
     parent_self_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('bases', remote_side=id))
@@ -36,7 +38,7 @@ class User(Base):
 class JobContract(Base):
     __tablename__ = 'job_contracts'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
     start_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -53,22 +55,21 @@ class JobContract(Base):
                                          foreign_keys=job_code)
 
 
-class JobAction(Base):
-    __tablename__ = 'job_actions'
-
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
-
-    # Should job + action be primary key ?
-    job = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('jobs.id'))
-    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.id'))
-    # Scope : Contract1, 2 3
-    # Limit : 20000 $
-
-
 class Action(Base):
     __tablename__ = 'actions'
 
     id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie manage_bases
+
+
+class ContractAction(Base):
+    __tablename__ = 'contract_actions'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+
+    contract = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
+    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.id'))
+    scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
+    maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
 
 
 class Job(Base):
@@ -80,13 +81,15 @@ class Job(Base):
 class Delegation(Base):
     __tablename__ = 'delegations'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+
     start_date = sqlalchemy.Column(sqlalchemy.Date)
     end_date = sqlalchemy.Column(sqlalchemy.Date)
     role = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.id'))
-    delegated_from = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.id'))
-    delegated_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.id'))
-    # Scope, Limit
+    delegated_from = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
+    delegated_to = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
+    scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
+    maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
 
     delegator_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('delegations_out'),
                                                foreign_keys=delegated_from)
@@ -99,7 +102,7 @@ class SyncJournal(Base):
 
     # Inserts only. Get all inserts, from the "versioning rows" SQL Alchemy example...?
     # Or get both inserts and updates ?
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     origin_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.id'))
     origin_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
@@ -115,7 +118,7 @@ class SyncJournal(Base):
 class Message(Base):
     __tablename__ = 'messages'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     sender = sqlalchemy.Column(sqlalchemy.String)
     addressee = sqlalchemy.Column(sqlalchemy.String)

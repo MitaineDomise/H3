@@ -49,7 +49,7 @@ class H3AlchemyRemoteDB():
                                                                              password=password,
                                                                              host=self.location,
                                                                              port=5002,
-                                                                             database='H3A'))
+                                                                             database='h3a'))
             SessionRemote.configure(bind=self.engine)
             self.engine.connect()
             return True
@@ -81,21 +81,21 @@ class H3AlchemyRemoteDB():
                         Acd.User.pw_hash == hashed_old)\
                 .one()
             if user:
-                print user.pw_hash
                 user.pw_hash = hashed_new
-                print user.pw_hash
                 session.merge(user)
-                print 'merged'
+
+            logger.debug(_("App-level password change success for user {user}")
+                         .format(user=username))
 
             # SQL-level, will fail if not for self
-            query = sqlalchemy.text('ALTER ROLE {name} WITH PASSWORD \'{password}\';'
+            query = sqlalchemy.text('ALTER ROLE \"{name}\" WITH PASSWORD \'{password}\';'
                                     .format(name=username, password=new_pass))
 
-            conn.execute("COMMIT;")  # have to clear the transaction before ALTER
-            print 'commit sent'
+            conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
-            print 'raw SQL sent'
             session.commit()
+            logger.debug(_("SQL-level password change success for user {user}")
+                         .format(user=username))
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("Password change failed for {name}; current user / password pair provided doesn't match")
                         .format(name=username))
@@ -115,6 +115,9 @@ class H3AlchemyRemoteDB():
             self.login(user, new_pass)
             self.engine.connect()
 
+            logger.debug(_("New password is now in effect for user {user}")
+                         .format(user=username))
+
             return True
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Password change has failed for {name}; login has been denied with the new password.")
@@ -125,42 +128,45 @@ class H3AlchemyRemoteDB():
         """
         Creates a new user slot to be later setup, at app- and SQL levels.
         SQL-level is salted a bit and hashed, to obfuscate the raw connection to remote
-        :param user:
+        :param user: User object with the pw_hash field actually storing the password PLAIN.
         :return:
         """
-        # TODO: Revamp that - Focal Points should have role creation rights.
-        # Trigger on users : only FPs can INSERT
-
-        # Maybe should be raw SQL to be absolutely sure of clean rollback ?
         session = None
         conn = None
+        hashed_login = hashlib.md5('H3' + user.login).hexdigest()
         try:
-            hashed_login = hashlib.md5('H3' + user.login).hexdigest()
             session = SessionRemote()
 
             # SQL-level
             conn = self.engine.connect()
-            query = sqlalchemy.text('CREATE USER {login} WITH PASSWORD \'{password}\';'
-                                    .format(login=hashed_login, password=(user.login + 'YOUPIE')))
+            query = sqlalchemy.text('CREATE USER \"{h_login}\" WITH PASSWORD \'{password}\';'
+                                    .format(h_login=hashed_login, password=user.pw_hash))
 
-            conn.execute("COMMIT;")  # have to clear the transaction before CREATE
+            conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
 
+            logger.debug(_("SQL role {h_login} ({plain}) created")
+                         .format(h_login=hashed_login, plain=user.login))
+
             # App-level
+            hashed_pass = hashlib.md5(user.pw_hash + user.login).hexdigest()
+            user.pw_hash = hashed_pass
             session.add(user)
 
             session.commit()
 
-            return True
+            logger.debug(_("App credentials for {plain} created")
+                         .format(plain=user.login))
 
-            # query = sqlalchemy.text('GRANT ' + user.base.lower() + '_users TO ' + user.login + ';')
-            # conn.execute(query)
-            # conn.execute("COMMIT;")
+            return True
         except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Creation of user {plain} failed")
+                             .format(plain=user.login))
             session.rollback()
-            query = sqlalchemy.text('DROP USER IF EXISTS {login};'
-                                    .format(login=user.login))
-            conn.execute("COMMIT;")  # have to clear the transaction before DROP
+            query = sqlalchemy.text('DROP USER IF EXISTS \"{login}\";'
+                                    .format(login=hashed_login))
+
+            conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
             return False
 
@@ -179,32 +185,44 @@ class H3AlchemyRemoteDB():
             # App-level
             session.add(base)
 
+            session.commit()
+
+            logger.debug(_("Base {name} added to the table")
+                         .format(name=base.full_name))
+
             # SQL-level
             query1 = sqlalchemy.text('CREATE ROLE {base}_users;'
                                      .format(base=base.id.lower()))
             query2 = sqlalchemy.text('GRANT h3_users TO {base}_users;'
                                      .format(base=base.id.lower()))
 
-            conn.execute("COMMIT;")
+            conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query1)
-            conn.execute("COMMIT;")
             conn.execute(query2)
-            session.commit()
+
+            logger.debug(_("Group role for base {name} has been created and added to H3 users")
+                         .format(name=base.full_name))
 
             return True
 
         except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to create base {name}")
+                             .format(name=base.full_name))
+
+            session.rollback()
+
             query = sqlalchemy.text('DROP ROLE IF EXISTS {base}_users;'
                                     .format(base=base.id.lower()))
-            conn.execute("COMMIT;")
+
+            conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
-            session.rollback()
 
             return False
 
     def get_user(self, username):
         """
         Pull a specific user from the list.
+        Uses the generic "reader" credentials as the wizard (logged off) needs it.
         :param username:
         :return:
         """
@@ -243,37 +261,240 @@ class H3AlchemyRemoteDB():
             logger.info(_("No current contract."))
             return None
 
-    def initialize(self):
+    def initialize(self, password):
         """
-        Format the main database on initial setup and gives read access to all tables to h3_users
+        Logs in with master PG password (warning !)
+        Formats the main database on initial setup and gives read access to all tables to h3_users
+        Creates the root base, reader user, root user, and gives that role global FP rights.
         :return:
         """
-        # TODO: also create the initial roles root and h3_users; grant INSERT to FPs
-        self.login('reader', 'weak')
-        meta = Acd.Base.metadata
-        conn = self.engine.connect()
         try:
+            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
+                                                                             username='postgres',
+                                                                             password=password,
+                                                                             host=self.location,
+                                                                             port=5002,
+                                                                             database='postgres', ))
+            SessionRemote.configure(bind=self.engine)
+            self.engine.connect()
+            logger.debug(_("Connected with master DB credentials"))
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Remote DB master login has failed."))
+
+        session = SessionRemote()
+        conn = self.engine.connect()
+        conn.execution_options(isolation_level="AUTOCOMMIT")
+        meta = Acd.Base.metadata
+
+        try:
+            query1 = sqlalchemy.text("CREATE DATABASE h3a;")
+            query2 = sqlalchemy.text("SET lc_messages = 'UTF8';")
+            conn.execute(query1)
+            conn.execute(query2)
+            logger.debug(_("Created DB with name h3a"))
+            conn.close()
+            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
+                                                                             username='postgres',
+                                                                             password=password,
+                                                                             host=self.location,
+                                                                             port=5002,
+                                                                             database='h3a', ))
+            SessionRemote.configure(bind=self.engine)
+            session = SessionRemote()
+            conn = self.engine.connect()
             meta.create_all(bind=self.engine)
             logger.debug(_("All tables created in remote"))
-            for table in meta.tables.values():
-                conn.execute("COMMIT;")  # have to clear the transaction before CREATE
-                query = sqlalchemy.text('GRANT SELECT ON TABLE {table_name} TO h3_users WITH GRANT OPTION;'
-                                        .format(table_name=table.key))
-                logger.debug(_("SELECT right granted to group h3_users on table {table_name}")
-                             .format(table_name=table.key))
-                conn.execute(query)
-            return True
         except sqlalchemy.exc.SQLAlchemyError:
-            meta.drop_all()
-            return False
+            logger.exception(_("Failed to init default H3 DB; dropping."))
+            conn.close()
+
+            # Definition of root objects follows
+
+        reader_user = Acd.User(login='reader',
+                               pw_hash='weak',
+                               first_name='Reader',
+                               last_name='H3',
+                               created_date=datetime.date.today(),
+                               banned_date=datetime.date(3000, 6, 6))
+
+        root_user = Acd.User(login='root',
+                             pw_hash='secret',
+                             first_name='Administrator',
+                             last_name='H3',
+                             created_date=datetime.date.today(),
+                             banned_date=datetime.date(3000, 6, 6))
+
+        root_base = Acd.WorkBase(id='root',
+                                 parent='root',
+                                 full_name='Hierarchy root',
+                                 opened_date=datetime.date.today(),
+                                 closed_date=datetime.date(3000, 6, 6),
+                                 country='XX',
+                                 time_zone='UTC')
+
+        root_job = Acd.Job(id='FP')
+
+        root_contract = Acd.JobContract(id=1,
+                                        user='root',
+                                        start_date=datetime.date.today(),
+                                        end_date=datetime.date(3000, 6, 6),
+                                        job_code='FP',
+                                        job_title='Global FP',
+                                        base='root')
+
+        root_a_1 = Acd.Action(id='manage_users')
+        root_a_2 = Acd.Action(id='manage_bases')
+        root_a_3 = Acd.Action(id='manage_jobs')
+        root_a_4 = Acd.Action(id='manage_job_contracts')
+        root_a_5 = Acd.Action(id='manage_contract_actions')
+
+        root_c_a_1 = Acd.ContractAction(contract=1,
+                                        action='manage_users',
+                                        scope='all',
+                                        maximum=-1)
+
+        root_c_a_2 = Acd.ContractAction(contract=1,
+                                        action='manage_bases',
+                                        scope='all',
+                                        maximum=-1)
+
+        root_c_a_3 = Acd.ContractAction(contract=1,
+                                        action='manage_jobs',
+                                        scope='all',
+                                        maximum=-1)
+
+        root_c_a_4 = Acd.ContractAction(contract=1,
+                                        action='manage_job_contracts',
+                                        scope='all',
+                                        maximum=-1)
+
+        root_c_a_5 = Acd.ContractAction(contract=1,
+                                        action='manage_contract_actions',
+                                        scope='all',
+                                        maximum=-1)
+
+        try:
+            conn.execution_options(isolation_level="AUTOCOMMIT")
+            query1 = sqlalchemy.text('CREATE ROLE h3_users '
+                                     'NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;')
+            query2 = sqlalchemy.text('CREATE ROLE h3_fps '
+                                     'NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;')
+            query3 = sqlalchemy.text('GRANT h3_users TO h3_fps;')
+
+            conn.execute(query1)
+            logger.debug(_("Created users group role"))
+            conn.execute(query2)
+            logger.debug(_("Created FP group role"))
+            conn.execute(query3)
+
+            self.create_base(root_base)
+            self.create_user(root_user)
+            self.create_user(reader_user)
+
+            query4 = sqlalchemy.text('GRANT h3_fps TO \"4f626e28d5c60212d8d38ed00f1444f2\";')
+            query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM \"f66ce97dfce5d8604edab9a721f3b85b\";')
+            query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
+            query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
+            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases TO \"f66ce97dfce5d8604edab9a721f3b85b\";')
+
+            logger.debug(_("Given users rights to FP group role"))
+            conn.execute(query4)
+            logger.debug(_("Given FP group role to root user"))
+            conn.execute(query5)
+            logger.debug(_("Removed creation rights from reader user"))
+            conn.execute(query6)
+            logger.debug(_("Users group can now SELECT all tables"))
+            conn.execute(query7)
+            logger.debug(_("FP group can now change users and bases tables"))
+            conn.execute(query8)
+            logger.debug(_("Reader role can now see users and bases (only)"))
+
+            conn.close()
+
+            logger.info(_("Basic rights granted to H3 default roles"))
+
+            session.add(root_job)
+            logger.debug(_("Root job inserted"))
+            session.add(root_contract)
+            logger.debug(_("Root contract inserted"))
+            session.add(root_a_1)
+            session.add(root_a_2)
+            session.add(root_a_3)
+            session.add(root_a_4)
+            session.add(root_a_5)
+
+            session.commit()
+
+            session.add(root_c_a_1)
+            session.add(root_c_a_2)
+            session.add(root_c_a_3)
+            session.add(root_c_a_4)
+            session.add(root_c_a_5)
+
+            session.commit()
+
+            logger.debug(_("Root contract actions inserted"))
+
+            logger.debug(_("Root data inserted"))
+            print _("DB init successful")
+
+        except sqlalchemy.exc.SQLAlchemyError:
+            print _("DB init failed, see log.txt for details")
+            logger.exception(_("Failed to init root data"))
+            conn.close()
+            session.rollback()
+
+    def nuke(self, password):
+        """
+        Logs in with master PG password (!!! WARNING !!!)
+        Drops all base roles and the DB itself !
+        :return:
+        """
+        try:
+            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
+                                                                             username='postgres',
+                                                                             password=password,
+                                                                             host=self.location,
+                                                                             port=5002,
+                                                                             database='postgres', ))
+            SessionRemote.configure(bind=self.engine)
+            self.engine.connect()
+            logger.debug(_("Connected with master DB credentials"))
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Remote DB master login has failed."))
+
+        conn = self.engine.connect()
+        conn.execution_options(isolation_level="AUTOCOMMIT")
+
+        try:
+            query0 = sqlalchemy.text("DROP DATABASE h3a;")
+            query1 = sqlalchemy.text('DROP ROLE IF EXISTS h3_fps;')
+            query2 = sqlalchemy.text('DROP ROLE IF EXISTS h3_users;')
+            query3 = sqlalchemy.text('DROP ROLE IF EXISTS root_users;')
+            query4 = sqlalchemy.text('DROP ROLE IF EXISTS \"4f626e28d5c60212d8d38ed00f1444f2\";')
+            query5 = sqlalchemy.text('DROP ROLE IF EXISTS \"f66ce97dfce5d8604edab9a721f3b85b\";')
+            conn.execute(query0)
+            conn.execute(query1)
+            conn.execute(query2)
+            conn.execute(query3)
+            conn.execute(query4)
+            conn.execute(query5)
+
+            logger.debug(_("Default DB and roles successfully wiped out"))
+            print _("DB Wipe successful")
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to clean up default DB and roles"))
+            print _("DB Wipe failed, see log.txt for details")
+
 
     def read_table(self, class_of_table):
         """
         Reads a whole table, returning a list of its objects (records)
+        Uses the generic "reader" credentials as the wizard (logged off) needs it for hierarchy.
         :param class_of_table:
         :return:
         """
-        self.login('reader', 'weak')  # Used by wizard when no user is yet logged, to get hierarchy
+        self.login('reader', 'weak')
         session = SessionRemote()
         return session.query(class_of_table).all()
 

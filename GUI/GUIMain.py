@@ -8,6 +8,7 @@ from PySide import QtGui, QtCore, QtSql, QtUiTools
 
 from core.AlchemyCore import H3AlchemyCore
 
+
 H3Core = H3AlchemyCore()
 
 logger = logging.getLogger(__name__)
@@ -737,5 +738,9 @@ def run():
     h3app.exec_()
 
 
-def init_remote(location):
-    H3Core.init_remote(location)
+def init_remote(location, password):
+    H3Core.init_remote(location, password)
+
+
+def nuke_remote(location, password):
+    H3Core.nuke_remote(location, password)

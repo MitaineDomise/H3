@@ -254,6 +254,8 @@ class H3AlchemyCore():
         else:
             return 0
 
-    def init_remote(self, location):
-        self.remote_db = H3AlchemyRemoteDB(None, location)
-        self.remote_db.initialize()
+    def init_remote(self, location, password):
+        H3AlchemyRemoteDB(self, location).initialize(password)
+
+    def nuke_remote(self, location, password):
+        H3AlchemyRemoteDB(self, location).nuke(password)
