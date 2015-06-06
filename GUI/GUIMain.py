@@ -57,6 +57,11 @@ class H3MainGUI(QtGui.QWidget):
         if num.row() == 2:
             ManageUsersScreen(self)
 
+    def ui_init(self):
+        # actions = H3Core.current_actions()  # should current_xxx try to sync before pulling up local data ? No.
+        # delegations = H3Core.current_delegations()
+        pass
+
     def ui_switcher(self, screen='jobhome'):
         if screen == 'jobhome':
             self.ui_switcher(H3Core.current_user.job_desc)
@@ -138,9 +143,6 @@ class SetupWizard(QtGui.QWidget):
         bg_template = QtGui.QPixmap(":/GUI/images/H3wizardbg.png")
         self.wizard.setPixmap(QtGui.QWizard.BackgroundPixmap, bg_template)
 
-        self.wizard.wizardPage2.setCommitPage(True)
-        self.wizard.wizardPage3.setCommitPage(True)
-
         if H3Core.local_db:
             self.wizard.localAddress.setText(H3Core.local_db.location)
             self.local_ok = True
@@ -148,6 +150,10 @@ class SetupWizard(QtGui.QWidget):
         if H3Core.remote_db:
             self.wizard.remoteAddress.setText(H3Core.remote_db.location)
             self.remote_ok = True
+
+        if H3Core.current_user:
+            self.wizard.usernameLineEdit.setText(H3Core.current_user.login)
+            self.user_ok = True
 
         self.wizard.browseButton.clicked.connect(self.browse)
 
@@ -158,21 +164,20 @@ class SetupWizard(QtGui.QWidget):
         self.wizard.usernameLineEdit.textChanged.connect(self.invalidate_user)
         self.wizard.searchButton.clicked.connect(self.check_user)
 
-        self.wizard.accepted.connect(self.setup_user)
+        self.wizard.accepted.connect(self.update_files)
 
         if (self.wizard.exec_() == QtGui.QDialog.Rejected
            and not H3Core.ready()):
             sys.exit()
 
-    def setup_user(self):
-        user = self.wizard.usernameLineEdit.text()
-        pw = self.wizard.passwordLineEdit.text()
-
-        if H3Core.user_state == "new":
-            H3Core.remote_pw_change(user, 'YOUPIE', pw)
-        elif H3Core.user_state == "remote":
-            # TODO: download base data
-            pass
+    def update_files(self):
+        # TODO: should have some kind of progress bar / animation
+        username = self.wizard.usernameLineEdit.text()
+        password = self.wizard.passwordLineEdit.text()
+        H3Core.remote_login(username, password)
+        H3Core.download_user_tables()
+        # H3Core.download_base_tables()
+        self.parent().ui_init()
 
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
@@ -184,7 +189,7 @@ class SetupWizard(QtGui.QWidget):
             temp_user_ok = True
             self.pw_ok = True
             self.wizard.wizardPage3.completeChanged.emit()
-        elif H3Core.user_state == "remote":
+        elif H3Core.user_state == "remote" or H3Core.user_state == "new_base":
             self.wizard.passwordLineEdit.show()
             self.wizard.passwordLabel.show()
             self.wizard.passwordLineEdit.textChanged.connect(self.check_pws)
@@ -229,7 +234,7 @@ class SetupWizard(QtGui.QWidget):
             else:
                 temp_pw_ok = False
                 self.wizard.passwordStatusLabel.setText(_("Password too short (minimum 6 characters)"))
-        elif H3Core.user_state == "remote":
+        elif H3Core.user_state == "remote" or H3Core.user_state == "new_base":
             if len(pw1) > 5:
                 temp_pw_ok = True
                 self.wizard.passwordStatusLabel.setText(_(""))
@@ -355,7 +360,7 @@ class RecapWizardPage(QtGui.QWizardPage):
             self.wizard().userActionRecap.setText(_("The user profile can not be used in H3"
                                                     " because it's not currently active"))
         else:
-            self.wizard().jobRecap.setText(H3Core.current_job.job_code + " - "
+            self.wizard().jobRecap.setText(H3Core.current_job_contract.job_code + " - "
                                            + H3Core.job_desc)
             self.wizard().baseRecap.setText(H3Core.base_code + " - "
                                             + H3Core.base_name)
@@ -366,10 +371,7 @@ class RecapWizardPage(QtGui.QWizardPage):
             elif H3Core.user_state == "remote":
                 self.wizard().userActionRecap.setText(_("The user profile will be downloaded into the local database. "
                                                         "You can then login. Welcome back to H3 !"))
-            elif H3Core.user_state == "new":
-                self.wizard().userActionRecap.setText(_("The user profile will be initialized and downloaded into the"
-                                                        " local database. Welcome to H3 !"))
-            elif H3Core.user_state == "new_base":
+            elif H3Core.user_state == "new" or H3Core.user_state == "new_base":
                 self.wizard().userActionRecap.setText(_("The user profile will be initialized and downloaded into the"
                                                         " local database. Welcome to H3 !"))
 
@@ -382,7 +384,7 @@ class RecapWizardPage(QtGui.QWizardPage):
                 message_box.setWindowIcon(QtGui.QIcon(":/GUI/images/H3.png"))
                 message_box.exec_()
 
-            H3Core.download_user(H3Core.current_user)
+            H3Core.download_current_user_info()
 
 
 class MessagesList(QtGui.QWidget):
@@ -520,7 +522,7 @@ class CreateBaseBox(QtGui.QWidget):
         self.new_base_box.baseCodeLineEdit.setValidator(validator)
         self.new_base_box.parentCodeLineEdit.setValidator(validator)
 
-        H3Core.download_hierarchy()
+        H3Core.download_public_tables()
 
         # Make the Qt SQL Database Object
         h3local = QtSql.QSqlDatabase('QSQLITE')
@@ -560,7 +562,7 @@ class CreateBaseBox(QtGui.QWidget):
                                        str(exc) + _("Please check that the parent code exists"), QtGui.QMessageBox.Ok)
             msgbox.setWindowIcon(QtGui.QIcon(":/GUI/images/H3.png"))
             msgbox.exec_()
-        H3Core.download_hierarchy()
+        H3Core.download_public_tables()
         self.table_model.select()
         self.update_tree()
 

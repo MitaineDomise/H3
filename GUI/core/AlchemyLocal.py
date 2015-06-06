@@ -61,7 +61,7 @@ class H3AlchemyLocalDB():
                                                .format(address=self.location))
         SessionLocal.configure(bind=self.engine)
         session = SessionLocal()
-        hashed_pass = 'md5' + hashlib.md5(password + username).hexdigest()
+        hashed_pass = hashlib.md5(password + username).hexdigest()
         try:
             user = session.query(Acd.User) \
                           .filter(Acd.User.login == username,
@@ -100,7 +100,7 @@ class H3AlchemyLocalDB():
                          .format(user=username))
             return False
 
-    def get_current_job(self, user):
+    def get_current_job_contract(self, user):
         """
         Finds the user's current job.
         :param user: A User object to get details from
@@ -108,7 +108,7 @@ class H3AlchemyLocalDB():
         """
         try:
             session = SessionLocal()
-            current_job = session.query(Acd.Job) \
+            current_job = session.query(Acd.JobContract) \
                 .filter(Acd.JobContract.user == user.login) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
@@ -216,13 +216,14 @@ class H3AlchemyLocalDB():
 
     def get_local_bases(self):
         """
-        Queries the local DB for bases stored
+        Queries the local DB for bases stored, starting from job contracts.
         :return: list of bases
         """
-        # TODO: this doesn't actually show the downloaded bases but the full hierarchy
         try:
             session = SessionLocal()
-            bases = session.query(Acd.WorkBase.id).all()
+            bases = session.query(Acd.JobContract.base) \
+                .group_by(Acd.JobContract.base) \
+                .all()
             logger.debug(_("List of bases in local DB : {list}")
                          .format(list=str(bases)))
             return bases

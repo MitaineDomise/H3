@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>400</width>
-    <height>300</height>
+    <width>640</width>
+    <height>480</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -22,7 +22,7 @@
     <string>Welcome to H3</string>
    </property>
    <property name="subTitle">
-    <string>This wizard will guide you through te initial setup phase.</string>
+    <string>This wizard will guide you through the initial setup phase.</string>
    </property>
    <layout class="QGridLayout" name="gridLayout">
     <item row="0" column="0">
@@ -391,6 +391,16 @@
    <container>1</container>
   </customwidget>
  </customwidgets>
+ <tabstops>
+  <tabstop>browseButton</tabstop>
+  <tabstop>localAddress</tabstop>
+  <tabstop>remoteAddress</tabstop>
+  <tabstop>connectButton</tabstop>
+  <tabstop>usernameLineEdit</tabstop>
+  <tabstop>searchButton</tabstop>
+  <tabstop>passwordLineEdit</tabstop>
+  <tabstop>confirmPasswordLineEdit</tabstop>
+ </tabstops>
  <resources>
   <include location="../../H3.qrc"/>
  </resources>

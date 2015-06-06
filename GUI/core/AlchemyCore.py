@@ -3,8 +3,8 @@ __author__ = 'Man'
 import ConfigParser
 import logging
 
-from AlchemyLocal import H3AlchemyLocalDB
-from AlchemyRemote import H3AlchemyRemoteDB
+import AlchemyLocal
+import AlchemyRemote
 import AlchemyClassDefs as Acd
 
 
@@ -22,11 +22,12 @@ class H3AlchemyCore():
 
         self.local_db = None
         self.remote_db = None
+        self.remote_reader = None
         self.user_state = None
 
         self.current_user = None
         self.full_name = None
-        self.current_job = None
+        self.current_job_contract = None
         self.job_desc = None
         self.base_code = None
         self.base_name = None
@@ -44,9 +45,10 @@ class H3AlchemyCore():
                self.options.has_option('DB Locations', 'remote')):
                 temp_local_db_location = self.options.get('DB Locations', 'local')
                 temp_remote_db_location = self.options.get('DB Locations', 'remote')
-                self.remote_db = H3AlchemyRemoteDB(self, temp_remote_db_location)
+                self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(self, temp_remote_db_location)
+                self.remote_reader = AlchemyRemote.H3AlchemyRemoteDB(self, temp_remote_db_location)
                 if self.ping_local(temp_local_db_location) == 1:
-                    self.local_db = H3AlchemyLocalDB(self, temp_local_db_location)
+                    self.local_db = AlchemyLocal.H3AlchemyLocalDB(self, temp_local_db_location)
                     if self.options.has_option('H3 Options', 'current user'):
                         username = self.options.get('H3 Options', 'current user')
                         self.current_user = self.local_db.get_user(username)
@@ -58,10 +60,11 @@ class H3AlchemyCore():
         Creates the local and remote DB instances and saves their location to the config file.
         Called from the setup wizard.
         """
-        self.local_db = H3AlchemyLocalDB(self, local)
+        self.local_db = AlchemyLocal.H3AlchemyLocalDB(self, local)
         self.local_db.init_public_tables()
-        self.download_hierarchy()
-        self.remote_db = H3AlchemyRemoteDB(self, remote)
+        self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(self, remote)
+        self.remote_reader = AlchemyRemote.H3AlchemyRemoteDB(self, remote)
+        self.download_public_tables()
         if not self.options.has_section('DB Locations'):
             self.options.add_section('DB Locations')
         self.options.set('DB Locations', 'local', local)
@@ -70,7 +73,7 @@ class H3AlchemyCore():
 
     def find_user(self, username):
         """
-        Called from the setup process to find out the status of the "new user" credentials provided.
+        Called from the wizard to find out the status of the "new user" credentials provided.
         :param username: the username to set up.
         """
         self.current_user = None
@@ -78,7 +81,8 @@ class H3AlchemyCore():
         if self.current_user:
             self.user_state = "local"
         else:
-            self.current_user = self.remote_db.get_user(username)
+            self.remote_reader.login('reader', 'weak')
+            self.current_user = self.remote_reader.get_user(username)
             if self.current_user:
                 if self.remote_db.login(username, username + 'YOUPIE'):
                     self.user_state = "new"
@@ -90,34 +94,33 @@ class H3AlchemyCore():
     def remote_pw_change(self, username, old_pass, new_pass):
         self.remote_db.login(username, old_pass)
         if self.remote_db.update_pass(username, old_pass, new_pass):
-            logger.debug(_("Initial password setup successful for user {login}")
+            logger.debug(_("Password change successful for user {login}")
                          .format(login=username))
         else:
             logger.error(_("Couldn't change password in remote for user {login}")
                          .format(login=username))
 
-    def download_user(self, user):
+    def download_current_user_info(self):
         """
-        Called on finding a user which isn't in the local DB but IS in the remote.
-        Downloads the user's personal and career info.
+        Called by wizard on finding a user which isn't in the local DB but IS in the remote.
+        Downloads the user's personal and current job info.
         """
-        logger.debug(_("User {login} downloaded into local DB")
-                     .format(login=user.login))
-        jobs = self.remote_db.get_jobs(user.login)
-        if jobs:
+        user = self.current_user
+        self.remote_db.login('reader', 'weak')
+        contract = self.remote_reader.get_current_job_contract(user)
+        if contract:
             self.local_db.put([user, ])
-            self.local_db.put(jobs)
-            logger.debug(ngettext("User {login}'s {number} job downloaded into local DB",
-                                  "User {login}'s {number} jobs downloaded into local DB",
-                                  len(jobs))
-                         .format(login=user.login, number=len(jobs)))
+            logger.debug(_("User {login} written into local DB")
+                         .format(login=user.login))
+            self.local_db.put([contract, ])
         else:
             logger.warning(_("User {login} doesn't have any jobs !")
                            .format(login=user.login))
 
     def update_user_details(self):
         """
-        Update the current user's personal and career details in the live core and in the config file
+        Update the current user's personal and career details in the live core and in the config file.
+        Used on local login and by the wizard (which will use the reader credentials) on remote
         :return:
         """
         self.full_name = _("{first} {last}") \
@@ -129,26 +132,23 @@ class H3AlchemyCore():
         self.options.set('H3 Options', 'current user', self.current_user.login)
 
         if self.user_state == "local":
-            self.current_job = self.local_db.get_current_job(self.current_user)
-        else:
-            self.current_job = self.remote_db.get_current_job(self.current_user)
-
-        if self.current_job:
-            self.job_desc = self.current_job.job_title
-            self.base_code = self.current_job.base
+            self.current_job_contract = self.local_db.get_current_job_contract(self.current_user)
+        elif self.user_state == "remote":
+            self.remote_reader.login('reader', 'weak')
+            self.current_job_contract = self.remote_reader.get_current_job_contract(self.current_user)
+        if self.current_job_contract:
+            self.job_desc = self.current_job_contract.job_title
+            self.base_code = self.current_job_contract.base
             self.base_name = self.local_db.get_base_fullname(self.base_code)
             self.update_base_visibility(self.base_code)
             self.options.set('H3 Options', 'Root Base', self.base_code)
 
             local_bases_list = self.local_db.get_local_bases()
-            unique_bases = []
-            for base in local_bases_list:
-                unique_bases.append(base.id)  # TODO: will that work with named tuple access ? (.id)
 
-            if unicode(self.current_job.base) not in unique_bases:
+            if self.current_job_contract.base not in local_bases_list.values():
                 self.user_state = "new_base"
                 logger.info(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
-                            .format(name=self.current_user.login, base=self.current_job.base))
+                            .format(name=self.current_user.login, base=self.current_job_contract.base))
         else:
             self.user_state = "no_job"
             logger.info(_("User {name} doesn't currently have a contract")
@@ -188,14 +188,45 @@ class H3AlchemyCore():
         else:
             return False
 
-    def download_hierarchy(self):
+    def remote_login(self, username, password):
+        """
+        Creates the link into the remote DB, with SQL credentials.
+        Should be able to survive disconnects.
+        :param username:
+        :param password:
+        :return:
+        """
+        if self.remote_db.login(username, password):
+            pass
+
+    # TODO : If success, start a timer that will ping and sync the remote DB according to options.
+
+    def download_public_tables(self):
         """
         First table to be populated entirely from remote as clients need to know the worldwide structure
-        (For users who have had a worldwide career !)
+        (For users who have had a worldwide career !). Uses reader credentials from first setup.
         """
-        # TODO: replace that with a proper sync
-        org_table_data = self.remote_db.read_table(Acd.WorkBase)
+        # TODO: supplement that with a proper sync (OK for first setup)
+        self.remote_reader.login('reader', 'weak')
+        org_table_data = self.remote_reader.read_table(Acd.WorkBase)
+        all_jobs = self.remote_reader.read_table(Acd.Job)
+        all_actions = self.remote_reader.read_table(Acd.Action)
         self.local_db.put(org_table_data)
+        self.local_db.put(all_jobs)
+        self.local_db.put(all_actions)
+
+    def download_user_tables(self):
+        """
+        We should have left the wizard just before;
+        From here on, the reading is done by the actual user account.
+        """
+        my_actions = self.remote_db.get_contract_actions(self.current_job_contract)
+        my_delegations = self.remote_db.get_delegations(self.current_job_contract)
+        self.local_db.put(my_actions)
+        self.local_db.put(my_delegations)
+
+    # def download_base_tables(self):
+
 
     def remote_create_user(self, login, password, first_name, last_name):
         """
@@ -239,7 +270,7 @@ class H3AlchemyCore():
             return 0  # open() doesn't error out on an empty filename
         try:
             open(path)  # Try to open location
-            temp_local_db = H3AlchemyLocalDB(self, path)
+            temp_local_db = AlchemyLocal.H3AlchemyLocalDB(self, path)
             if temp_local_db.has_a_base():
                 return 1  # This is a H3 DB
             else:
@@ -248,14 +279,20 @@ class H3AlchemyCore():
             return -1  # No file here, OK to create
 
     def ping_remote(self, address):
-        temp_remote_db = H3AlchemyRemoteDB(self, address)
+        temp_remote_db = AlchemyRemote.H3AlchemyRemoteDB(self, address)
         if temp_remote_db.login('reader', 'weak'):
             return 1
         else:
             return 0
 
     def init_remote(self, location, password):
-        H3AlchemyRemoteDB(self, location).initialize(password)
+        new_db = AlchemyRemote.H3AlchemyRemoteDB(self, location)
+        new_db.login('postgres', password)
+        logger.debug(_("Connected with master DB credentials"))
+        new_db.initialize(password)
 
     def nuke_remote(self, location, password):
-        H3AlchemyRemoteDB(self, location).nuke(password)
+        target_db = AlchemyRemote.H3AlchemyRemoteDB(self, location)
+        target_db.login('postgres', password)
+        logger.debug(_("Connected with master DB credentials"))
+        target_db.nuke()

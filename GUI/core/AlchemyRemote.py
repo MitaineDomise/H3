@@ -54,8 +54,8 @@ class H3AlchemyRemoteDB():
             self.engine.connect()
             return True
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Remote DB login has failed for credentials {login} / {password}")
-                             .format(login=username, password=password))
+            logger.info(_("Remote DB login has failed for credentials {login} / {password}")
+                        .format(login=username, password=password))
             return False
 
     def update_pass(self, username, old_pass, new_pass):
@@ -222,11 +222,9 @@ class H3AlchemyRemoteDB():
     def get_user(self, username):
         """
         Pull a specific user from the list.
-        Uses the generic "reader" credentials as the wizard (logged off) needs it.
         :param username:
         :return:
         """
-        self.login("reader", "weak")
         session = SessionRemote()
         try:
             user = session.query(Acd.User) \
@@ -244,15 +242,15 @@ class H3AlchemyRemoteDB():
                          .format(name=username))
             return False
 
-    def get_jobs(self, username):
+    def get_career(self, user):
         """
         Get the list of jobs for a user.
-        :param username:
+        :param user: user object to find jobs
         :return:
         """
         session = SessionRemote()
         jobs = session.query(Acd.JobContract) \
-            .filter(Acd.JobContract.user == username) \
+            .filter(Acd.JobContract.user == user.login) \
             .order_by(Acd.JobContract.start_date) \
             .all()
         if jobs:
@@ -268,31 +266,18 @@ class H3AlchemyRemoteDB():
         Creates the root base, reader user, root user, and gives that role global FP rights.
         :return:
         """
-        try:
-            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
-                                                                             username='postgres',
-                                                                             password=password,
-                                                                             host=self.location,
-                                                                             port=5002,
-                                                                             database='postgres', ))
-            SessionRemote.configure(bind=self.engine)
-            self.engine.connect()
-            logger.debug(_("Connected with master DB credentials"))
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Remote DB master login has failed."))
-
         session = SessionRemote()
-        conn = self.engine.connect()
-        conn.execution_options(isolation_level="AUTOCOMMIT")
+        cnx = self.engine.connect()
+        cnx.execution_options(isolation_level="AUTOCOMMIT")
         meta = Acd.Base.metadata
 
         try:
             query1 = sqlalchemy.text("CREATE DATABASE h3a;")
             query2 = sqlalchemy.text("SET lc_messages = 'UTF8';")
-            conn.execute(query1)
-            conn.execute(query2)
+            cnx.execute(query1)
+            cnx.execute(query2)
             logger.debug(_("Created DB with name h3a"))
-            conn.close()
+            cnx.close()
             self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
                                                                              username='postgres',
                                                                              password=password,
@@ -301,12 +286,13 @@ class H3AlchemyRemoteDB():
                                                                              database='h3a', ))
             SessionRemote.configure(bind=self.engine)
             session = SessionRemote()
-            conn = self.engine.connect()
+            cnx = self.engine.connect()
             meta.create_all(bind=self.engine)
             logger.debug(_("All tables created in remote"))
+            cnx.close()
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to init default H3 DB; dropping."))
-            conn.close()
+            cnx.close()
 
             # Definition of root objects follows
 
@@ -325,7 +311,7 @@ class H3AlchemyRemoteDB():
                              banned_date=datetime.date(3000, 6, 6))
 
         root_base = Acd.WorkBase(id='root',
-                                 parent='root',
+                                 parent='',
                                  full_name='Hierarchy root',
                                  opened_date=datetime.date.today(),
                                  closed_date=datetime.date(3000, 6, 6),
@@ -374,18 +360,18 @@ class H3AlchemyRemoteDB():
                                         maximum=-1)
 
         try:
-            conn.execution_options(isolation_level="AUTOCOMMIT")
+            cnx.execution_options(isolation_level="AUTOCOMMIT")
             query1 = sqlalchemy.text('CREATE ROLE h3_users '
                                      'NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;')
             query2 = sqlalchemy.text('CREATE ROLE h3_fps '
                                      'NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;')
             query3 = sqlalchemy.text('GRANT h3_users TO h3_fps;')
 
-            conn.execute(query1)
+            cnx.execute(query1)
             logger.debug(_("Created users group role"))
-            conn.execute(query2)
+            cnx.execute(query2)
             logger.debug(_("Created FP group role"))
-            conn.execute(query3)
+            cnx.execute(query3)
 
             self.create_base(root_base)
             self.create_user(root_user)
@@ -395,21 +381,22 @@ class H3AlchemyRemoteDB():
             query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM \"f66ce97dfce5d8604edab9a721f3b85b\";')
             query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
-            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases TO \"f66ce97dfce5d8604edab9a721f3b85b\";')
+            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, actions, job_contracts '
+                                     'TO \"f66ce97dfce5d8604edab9a721f3b85b\";')
 
             logger.debug(_("Given users rights to FP group role"))
-            conn.execute(query4)
+            cnx.execute(query4)
             logger.debug(_("Given FP group role to root user"))
-            conn.execute(query5)
+            cnx.execute(query5)
             logger.debug(_("Removed creation rights from reader user"))
-            conn.execute(query6)
+            cnx.execute(query6)
             logger.debug(_("Users group can now SELECT all tables"))
-            conn.execute(query7)
+            cnx.execute(query7)
             logger.debug(_("FP group can now change users and bases tables"))
-            conn.execute(query8)
+            cnx.execute(query8)
             logger.debug(_("Reader role can now see users and bases (only)"))
 
-            conn.close()
+            cnx.close()
 
             logger.info(_("Basic rights granted to H3 default roles"))
 
@@ -441,27 +428,14 @@ class H3AlchemyRemoteDB():
         except sqlalchemy.exc.SQLAlchemyError:
             print _("DB init failed, see log.txt for details")
             logger.exception(_("Failed to init root data"))
-            conn.close()
             session.rollback()
+            cnx.close()
 
-    def nuke(self, password):
+    def nuke(self):
         """
-        Logs in with master PG password (!!! WARNING !!!)
         Drops all base roles and the DB itself !
         :return:
         """
-        try:
-            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
-                                                                             username='postgres',
-                                                                             password=password,
-                                                                             host=self.location,
-                                                                             port=5002,
-                                                                             database='postgres', ))
-            SessionRemote.configure(bind=self.engine)
-            self.engine.connect()
-            logger.debug(_("Connected with master DB credentials"))
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Remote DB master login has failed."))
 
         conn = self.engine.connect()
         conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -486,15 +460,12 @@ class H3AlchemyRemoteDB():
             logger.exception(_("Failed to clean up default DB and roles"))
             print _("DB Wipe failed, see log.txt for details")
 
-
     def read_table(self, class_of_table):
         """
         Reads a whole table, returning a list of its objects (records)
-        Uses the generic "reader" credentials as the wizard (logged off) needs it for hierarchy.
         :param class_of_table:
         :return:
         """
-        self.login('reader', 'weak')
         session = SessionRemote()
         return session.query(class_of_table).all()
 
@@ -504,7 +475,6 @@ class H3AlchemyRemoteDB():
         :param bases_list:
         :return:
         """
-        # self.login('reader', 'weak')
         session = SessionRemote()
         ret = session.query(Acd.User.login,
                             Acd.User.first_name,
@@ -516,7 +486,7 @@ class H3AlchemyRemoteDB():
             .order_by(Acd.JobContract.base).all()
         return ret
 
-    def get_current_job(self, user):
+    def get_current_job_contract(self, user):
         """
         Finds the user's current job.
         :param user: A User object to get details from
@@ -542,3 +512,43 @@ class H3AlchemyRemoteDB():
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Querying the remote DB for {user}'s current job failed")
                              .format(user=user.login))
+
+    def get_contract_actions(self, job_contract):
+        """
+        Finds the actions linked with a given contract.
+        :return:
+        """
+        try:
+            session = SessionRemote()
+            actions_list = session.query(Acd.ContractAction) \
+                .filter(Acd.ContractAction.contract == job_contract.id) \
+                .all()
+            logger.debug(_("Actions in remote for contract {job}, {base} : {list}")
+                         .format(job=job_contract.job_title, base=job_contract.base, list=actions_list.values()))
+            return actions_list
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.info(_("No actions found in remote for contract {job}, {base}")
+                        .format(job=job_contract.job_title, base=job_contract.base))
+            return None
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Querying the remote DB for actions failed"))
+
+    def get_delegations(self, job_contract):
+        """
+        Finds the actions delegated *to* a given contract.
+        :return:
+        """
+        try:
+            session = SessionRemote()
+            delegations_list = session.query(Acd.Delegation) \
+                .filter(Acd.Delegation.delegated_to == job_contract.id) \
+                .all()
+            logger.debug(_("Delegations in remote to contract {job}, {base} : {list}")
+                         .format(job=job_contract.job_title, base=job_contract.base, list=delegations_list.values()))
+            return delegations_list
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.info(_("No delegations found in remote for contract {job}, {base}")
+                        .format(job=job_contract.job_title, base=job_contract.base))
+            return None
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Querying the remote DB for delegations failed"))

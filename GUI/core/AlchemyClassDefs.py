@@ -115,6 +115,17 @@ class SyncJournal(Base):
     origin_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'))
 
 
+class SyncCursor(Base):
+    __tablename__ = 'sync_cursors'
+
+    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+
+    user = sqlalchemy.Column(sqlalchemy.String)
+    base = sqlalchemy.Column(sqlalchemy.String)
+    last_synced = sqlalchemy.Column(sqlalchemy.DateTime)
+    last_transaction_synced = sqlalchemy.Column(sqlalchemy.Integer)  # From SyncJournal
+
+
 class Message(Base):
     __tablename__ = 'messages'
 
