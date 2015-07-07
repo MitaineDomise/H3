@@ -1,17 +1,15 @@
 __author__ = 'Man'
 
-import ConfigParser
+import configparser
 import logging
 
-import AlchemyLocal
-import AlchemyRemote
-import AlchemyClassDefs as Acd
-
+from . import AlchemyLocal, AlchemyRemote
+from . import AlchemyClassDefs as Acd
 
 logger = logging.getLogger(__name__)
 
 
-class H3AlchemyCore():
+class H3AlchemyCore:
     """
     This is the central module for data manipulation. Now relies on SQLAlchemy's ORM.
     """
@@ -33,7 +31,7 @@ class H3AlchemyCore():
         self.base_name = None
         self.base_visibility = []
 
-        self.options = ConfigParser.ConfigParser()
+        self.options = configparser.ConfigParser()
 
     def ready(self):
         """
@@ -69,7 +67,7 @@ class H3AlchemyCore():
             self.options.add_section('DB Locations')
         self.options.set('DB Locations', 'local', local)
         self.options.set('DB Locations', 'remote', remote)
-        self.options.write(open('config.txt', 'wb'))
+        self.options.write(open('config.txt', 'w'))
 
     def find_user(self, username):
         """
@@ -145,7 +143,7 @@ class H3AlchemyCore():
 
             local_bases_list = self.local_db.get_local_bases()
 
-            if self.current_job_contract.base not in local_bases_list.values():
+            if self.current_job_contract.base not in local_bases_list:
                 self.user_state = "new_base"
                 logger.info(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
                             .format(name=self.current_user.login, base=self.current_job_contract.base))
@@ -154,7 +152,7 @@ class H3AlchemyCore():
             logger.info(_("User {name} doesn't currently have a contract")
                         .format(name=self.current_user.login))
 
-        self.options.write(open('config.txt', 'wb'))
+        self.options.write(open('config.txt', 'w'))
 
     def update_base_visibility(self, base_name):
         """
@@ -169,8 +167,9 @@ class H3AlchemyCore():
             for base in tree_row:
                 for record in org_table:
                     if record.parent == base:
-                        next_row.append(record.id)
-                        self.base_visibility.append(record.id)
+                        if record.parent != record.id:
+                            next_row.append(record.id)
+                            self.base_visibility.append(record.id)
             tree_row = next_row
             next_row = list()
 
@@ -226,7 +225,6 @@ class H3AlchemyCore():
         self.local_db.put(my_delegations)
 
     # def download_base_tables(self):
-
 
     def remote_create_user(self, login, password, first_name, last_name):
         """
@@ -287,12 +285,12 @@ class H3AlchemyCore():
 
     def init_remote(self, location, password):
         new_db = AlchemyRemote.H3AlchemyRemoteDB(self, location)
-        new_db.login('postgres', password)
+        new_db.master_login('postgres', password)
         logger.debug(_("Connected with master DB credentials"))
         new_db.initialize(password)
 
     def nuke_remote(self, location, password):
         target_db = AlchemyRemote.H3AlchemyRemoteDB(self, location)
-        target_db.login('postgres', password)
+        target_db.master_login('postgres', password)
         logger.debug(_("Connected with master DB credentials"))
         target_db.nuke()

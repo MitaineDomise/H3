@@ -6,8 +6,7 @@ import logging
 
 from PySide import QtGui, QtCore, QtSql, QtUiTools
 
-from core.AlchemyCore import H3AlchemyCore
-
+from .core.AlchemyCore import H3AlchemyCore
 
 H3Core = H3AlchemyCore()
 
@@ -46,7 +45,7 @@ class H3MainGUI(QtGui.QWidget):
 
         self.root_window.listView.clicked.connect(self.do_something)
 
-        MessagesList(self, H3Core.current_user)
+        # MessagesList(self, H3Core.current_user)
 
     @staticmethod
     def load_resource_file():
@@ -58,7 +57,7 @@ class H3MainGUI(QtGui.QWidget):
             ManageUsersScreen(self)
 
     def ui_init(self):
-        # actions = H3Core.current_actions()  # should current_xxx try to sync before pulling up local data ? No.
+        # actions = H3Core.current_actions()
         # delegations = H3Core.current_delegations()
         pass
 
@@ -624,10 +623,10 @@ class ProjectMenu(QtGui.QWidget):
         parent_list = list()
         for row in range(0, table_model.rowCount()):
             parent_list.append(table_model.data(table_model.index(row, 1)))
-        print parent_list
+        print(parent_list)
         parent_set = set(parent_list)
         sorted_parents = sorted(parent_set)
-        print sorted_parents
+        print(sorted_parents)
 
         # Make a list model out of the unique parents string list
         list_model = QtGui.QStringListModel(sorted_parents)
@@ -736,7 +735,7 @@ class TreeModel(QtGui.QStandardItemModel):
 
 def run():
     h3app = QtGui.QApplication(sys.argv)
-    H3MainGUI()
+    h3gui = H3MainGUI()
     h3app.exec_()
 
 

@@ -11,14 +11,13 @@ import sqlalchemy.engine
 import sqlalchemy.engine.url
 from sqlalchemy.event import listen
 
-import AlchemyClassDefs as Acd
-
+from . import AlchemyClassDefs as Acd
 
 SessionLocal = sqlalchemy.orm.sessionmaker()
 logger = logging.getLogger(__name__)
 
 
-class H3AlchemyLocalDB():
+class H3AlchemyLocalDB:
     """
     Handles the interaction with the local DB, here SQLite but could be swapped out for any other backend.
     """
@@ -61,7 +60,7 @@ class H3AlchemyLocalDB():
                                                .format(address=self.location))
         SessionLocal.configure(bind=self.engine)
         session = SessionLocal()
-        hashed_pass = hashlib.md5(password + username).hexdigest()
+        hashed_pass = hashlib.md5((password + username).encode(encoding='ascii')).hexdigest()
         try:
             user = session.query(Acd.User) \
                           .filter(Acd.User.login == username,
@@ -148,9 +147,10 @@ class H3AlchemyLocalDB():
         """
         try:
             session = SessionLocal()
+            table = session.query(class_of_table).all()
             logger.debug(_("Successfully read table {table}")
                          .format(table=class_of_table))
-            return session.query(class_of_table).all()
+            return table
         except sqlalchemy.exc.SQLAlchemyError:
             logger.error(_("Failed to read table {table}")
                          .format(table=class_of_table))
@@ -173,7 +173,7 @@ class H3AlchemyLocalDB():
                          .format(records=records))
             return True
         except sqlalchemy.exc.SQLAlchemyError as exc:
-            print exc
+            print(exc)
             logger.error(ngettext("Failed to insert record {records}",
                                   "Failed to insert records in {records}",
                                   len(records))

@@ -10,14 +10,13 @@ import sqlalchemy.orm
 import sqlalchemy.engine
 import sqlalchemy.engine.url
 
-import AlchemyClassDefs as Acd
-
+from . import AlchemyClassDefs as Acd
 
 SessionRemote = sqlalchemy.orm.sessionmaker()
 logger = logging.getLogger(__name__)
 
 
-class H3AlchemyRemoteDB():
+class H3AlchemyRemoteDB:
     """
     Handles the interaction with the local DB, here PostGreSQL but could be swapped out for any other backend.
     """
@@ -43,13 +42,35 @@ class H3AlchemyRemoteDB():
         :return:
         """
         try:
-            hashed_login = hashlib.md5('H3' + username).hexdigest()
+            hashed_login = hashlib.md5(('H3' + username).encode(encoding='ascii')).hexdigest()
             self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
                                                                              username=hashed_login,
                                                                              password=password,
                                                                              host=self.location,
-                                                                             port=5002,
+                                                                             port=5432,
                                                                              database='h3a'))
+            SessionRemote.configure(bind=self.engine)
+            self.engine.connect()
+            return True
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.info(_("Remote DB login has failed for credentials {login} / {password}")
+                        .format(login=username, password=password))
+            return False
+
+    def master_login(self, username, password):
+        """
+        Connects to the top-level PGSQL database with admin rights; very dangerous and used only for init / nuke
+        :param username:
+        :param password:
+        :return:
+        """
+        try:
+            self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
+                                                                             username=username,
+                                                                             password=password,
+                                                                             host=self.location,
+                                                                             port=5432,
+                                                                             database='postgres'))
             SessionRemote.configure(bind=self.engine)
             self.engine.connect()
             return True
@@ -71,8 +92,8 @@ class H3AlchemyRemoteDB():
 
         self.login(username, old_pass)
         session = SessionRemote()
-        hashed_old = 'md5' + hashlib.md5(old_pass + username).hexdigest()
-        hashed_new = 'md5' + hashlib.md5(new_pass + username).hexdigest()
+        hashed_old = 'md5' + hashlib.md5((old_pass + username).encode(encoding='ascii')).hexdigest()
+        hashed_new = 'md5' + hashlib.md5((new_pass + username).encode(encoding='ascii')).hexdigest()
         try:
             conn = self.engine.connect()
             # App-level
@@ -133,7 +154,7 @@ class H3AlchemyRemoteDB():
         """
         session = None
         conn = None
-        hashed_login = hashlib.md5('H3' + user.login).hexdigest()
+        hashed_login = hashlib.md5(('H3' + user.login).encode(encoding='ascii')).hexdigest()
         try:
             session = SessionRemote()
 
@@ -149,7 +170,7 @@ class H3AlchemyRemoteDB():
                          .format(h_login=hashed_login, plain=user.login))
 
             # App-level
-            hashed_pass = hashlib.md5(user.pw_hash + user.login).hexdigest()
+            hashed_pass = hashlib.md5((user.pw_hash + user.login).encode(encoding='ascii')).hexdigest()
             user.pw_hash = hashed_pass
             session.add(user)
 
@@ -282,7 +303,7 @@ class H3AlchemyRemoteDB():
                                                                              username='postgres',
                                                                              password=password,
                                                                              host=self.location,
-                                                                             port=5002,
+                                                                             port=5432,
                                                                              database='h3a', ))
             SessionRemote.configure(bind=self.engine)
             session = SessionRemote()
@@ -311,7 +332,7 @@ class H3AlchemyRemoteDB():
                              banned_date=datetime.date(3000, 6, 6))
 
         root_base = Acd.WorkBase(id='root',
-                                 parent='',
+                                 parent='root',
                                  full_name='Hierarchy root',
                                  opened_date=datetime.date.today(),
                                  closed_date=datetime.date(3000, 6, 6),
@@ -360,6 +381,7 @@ class H3AlchemyRemoteDB():
                                         maximum=-1)
 
         try:
+            cnx = self.engine.connect()
             cnx.execution_options(isolation_level="AUTOCOMMIT")
             query1 = sqlalchemy.text('CREATE ROLE h3_users '
                                      'NOSUPERUSER INHERIT NOCREATEDB NOCREATEROLE NOREPLICATION;')
@@ -423,17 +445,17 @@ class H3AlchemyRemoteDB():
             logger.debug(_("Root contract actions inserted"))
 
             logger.debug(_("Root data inserted"))
-            print _("DB init successful")
+            print(_("DB init successful"))
 
         except sqlalchemy.exc.SQLAlchemyError:
-            print _("DB init failed, see log.txt for details")
+            print(_("DB init failed, see log.txt for details"))
             logger.exception(_("Failed to init root data"))
             session.rollback()
             cnx.close()
 
     def nuke(self):
         """
-        Drops all base roles and the DB itself !
+        Drops all base roles and the DB itself ! Note: remember to disconnect from the DB in pgadmin.
         :return:
         """
 
@@ -455,10 +477,10 @@ class H3AlchemyRemoteDB():
             conn.execute(query5)
 
             logger.debug(_("Default DB and roles successfully wiped out"))
-            print _("DB Wipe successful")
+            print(_("DB Wipe successful"))
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to clean up default DB and roles"))
-            print _("DB Wipe failed, see log.txt for details")
+            print(_("DB Wipe failed, see log.txt for details"))
 
     def read_table(self, class_of_table):
         """
