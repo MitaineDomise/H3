@@ -6,16 +6,16 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>640</width>
-    <height>480</height>
+    <width>1280</width>
+    <height>720</height>
    </rect>
   </property>
   <property name="windowTitle">
    <string>H3 Setup Wizard</string>
   </property>
   <property name="windowIcon">
-   <iconset resource="../../H3.qrc">
-    <normaloff>:/GUI/images/H3.svg</normaloff>:/GUI/images/H3.svg</iconset>
+   <iconset resource="H3.qrc">
+    <normaloff>:/images/H3.png</normaloff>:/images/H3.png</iconset>
   </property>
   <widget class="QWizardPage" name="wizardPage1">
    <property name="title">
@@ -410,7 +410,7 @@
   <tabstop>confirmPasswordLineEdit</tabstop>
  </tabstops>
  <resources>
-  <include location="../../H3.qrc"/>
+  <include location="H3.qrc"/>
  </resources>
  <connections/>
 </ui>

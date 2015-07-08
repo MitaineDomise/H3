@@ -224,9 +224,12 @@ class H3AlchemyLocalDB:
             bases = session.query(Acd.JobContract.base) \
                 .group_by(Acd.JobContract.base) \
                 .all()
+            unique_bases = list()
+            for base in bases:
+                unique_bases.append(base[0])
             logger.debug(_("List of bases in local DB : {list}")
-                         .format(list=str(bases)))
-            return bases
+                         .format(list=str(unique_bases)))
+            return unique_bases
         except sqlalchemy.exc.SQLAlchemyError:
             logger.warning(_("Unable to query local DB at location {location}")
                            .format(location=self.location))

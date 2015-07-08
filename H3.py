@@ -4,9 +4,9 @@ import gettext
 import logging
 import argparse
 
-import GUI.GUIMain
+import H3.GUI.GUIMain
 
-gettext.install("H3", localedir="GUI/lang", names=['ngettext', ])
+gettext.install("H3", localedir="H3/lang", names=['ngettext', ])
 logging.basicConfig(filename='log.txt', filemode='w', level=logging.DEBUG)
 
 parser = argparse.ArgumentParser()
@@ -22,9 +22,8 @@ args = parser.parse_args()
 
 if __name__ == '__main__':
     if args.init_remote:
-        GUI.GUIMain.init_remote(args.init_remote, args.password)
+        H3.GUI.GUIMain.init_remote(args.init_remote, args.password)
     elif args.nuke_remote:
-        GUI.GUIMain.nuke_remote(args.nuke_remote, args.password)
+        H3.GUI.GUIMain.nuke_remote(args.nuke_remote, args.password)
     else:
-        GUI.GUIMain.run()
-
+        H3.GUI.GUIMain.run()

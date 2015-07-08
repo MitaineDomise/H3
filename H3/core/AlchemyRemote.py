@@ -493,7 +493,7 @@ class H3AlchemyRemoteDB:
 
     def get_visible_users(self, bases_list):
         """
-        Get the users from a given list of bases, for display by GUI.
+        Get the users from a given list of bases, for display by H3.
         :param bases_list:
         :return:
         """
@@ -546,7 +546,7 @@ class H3AlchemyRemoteDB:
                 .filter(Acd.ContractAction.contract == job_contract.id) \
                 .all()
             logger.debug(_("Actions in remote for contract {job}, {base} : {list}")
-                         .format(job=job_contract.job_title, base=job_contract.base, list=actions_list.values()))
+                         .format(job=job_contract.job_title, base=job_contract.base, list=actions_list))
             return actions_list
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No actions found in remote for contract {job}, {base}")

@@ -1,0 +1,556 @@
+# SOME DESCRIPTIVE TITLE.
+# Copyright (C) YEAR THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the PACKAGE package.
+# FIRST AUTHOR <EMAIL@ADDRESS>, YEAR.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: PACKAGE VERSION\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2015-07-08 21:28+0100\n"
+"PO-Revision-Date: YEAR-MO-DA HO:MI+ZONE\n"
+"Last-Translator: FULL NAME <EMAIL@ADDRESS>\n"
+"Language-Team: LANGUAGE <LL@li.org>\n"
+"Language: \n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=CHARSET\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=INTEGER; plural=EXPRESSION;\n"
+
+#: ..\..\H3.py:15
+msgid "Format the remote DB with the initial table structure."
+msgstr ""
+
+#: ..\..\H3.py:17
+msgid "DELETES the remote DB and the default user roles."
+msgstr ""
+
+#: ..\..\H3.py:19
+msgid ""
+"Provide the master password to the remote DB, for the init and nuke "
+"operations"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:37
+#, python-brace-format
+msgid "{name}, {job}, {base}"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:54
+msgid "Resource file opened successfully"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:56
+msgid "Error loading resource file"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:120
+#, python-format
+msgid "Successfully logged in as %(name)s"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:194
+#, python-brace-format
+msgid "User {login} already recorded locally, you can proceed !"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:203
+#, python-brace-format
+msgid "User {login} found in remote, please enter password"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:213
+#, python-brace-format
+msgid "User {login} ready for creation, please enter password"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:218
+#, python-brace-format
+msgid "User {login} has no current contract. Please contact your focal point"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:223
+#, python-brace-format
+msgid "User {login} not found. Please contact your focal point."
+msgstr ""
+
+#: ..\GUI\GUIMain.py:237
+msgid "Password valid, you can proceed !"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:240
+msgid "Passwords don't match"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:243
+msgid "Password too short (minimum 6 characters)"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:247
+msgid " "
+msgstr ""
+
+#: ..\GUI\GUIMain.py:250
+msgid "Password is at least 6 characters"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:259
+msgid "Choose local DB file location"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:270
+#, python-brace-format
+msgid "Ready to create new local DB at {location}"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:274
+#, python-brace-format
+msgid "{location} is a valid H3 DB"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:280
+#, python-brace-format
+msgid "{location} is not a valid location for a H3 DB"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:298
+#, python-brace-format
+msgid "Successfully contacted H3 DB at {location}"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:303
+#, python-brace-format
+msgid "Unable to reach a H3 DB at {location}"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:365
+msgid "No current contract"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:366
+msgid "No current posting"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:367
+msgid ""
+"The user profile can not be used in H3 because it's not currently active"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:376
+msgid ""
+"The user profile was already set up in the local database.This wizard will "
+"only update the user info."
+msgstr ""
+
+#: ..\GUI\GUIMain.py:379
+msgid ""
+"The user profile will be downloaded into the local database. You can then "
+"login. Welcome back to H3 !"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:382
+msgid ""
+"The user profile will be initialized and downloaded into the local database. "
+"Welcome to H3 !"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:385
+msgid "New base data needed"
+msgstr ""
+
+#: ..\GUI\GUIMain.py:386
+msgid ""
+"H3 will now download the data for the office your new user is affected to. "
+"If this is not a new H3 installation, please consider deleting and "
+"rebuilding your local Database file, or use the administrative options in H3 "
+"to remove old data."
+msgstr ""
+
+#: ..\core\AlchemyCore.py:95
+#, python-brace-format
+msgid "Password change successful for user {login}"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:98
+#, python-brace-format
+msgid "Couldn't change password in remote for user {login}"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:111
+#, python-brace-format
+msgid "User {login} written into local DB"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:115
+#, python-brace-format
+msgid "User {login} doesn't have any jobs !"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:124
+#, python-brace-format
+msgid "{first} {last}"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:148
+#, python-brace-format
+msgid ""
+"User {name} is currently affected to {base}, which isn't part of the local "
+"DB."
+msgstr ""
+
+#: ..\core\AlchemyCore.py:152
+#, python-brace-format
+msgid "User {name} doesn't currently have a contract"
+msgstr ""
+
+#: ..\core\AlchemyCore.py:289 ..\core\AlchemyCore.py:295
+msgid "Connected with master DB credentials"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:69
+#, python-brace-format
+msgid "Successfully logged in with the pair {user} / {password}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:73
+#, python-brace-format
+msgid "Impossible to login with the pair {user} / {password}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:76
+#, python-brace-format
+msgid "Multiple matches found for pair {user} / {password} !"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:90
+#, python-brace-format
+msgid "User {user} found in local DB."
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:94
+#, python-brace-format
+msgid "User {user} not found in local DB."
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:98
+#, python-brace-format
+msgid "Multiple user records for username {user} found in local DB !"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:115
+#, python-brace-format
+msgid "Active job found in local for user {name} : {job} - {title}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:119
+#, python-brace-format
+msgid "No active jobs found in local for user {name}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:123
+#, python-brace-format
+msgid "Multiple active jobs found in local for user {name} !"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:132
+#, python-brace-format
+msgid "Base {code} found in local table, with name {name}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:136
+#, python-brace-format
+msgid "Base {code} not found"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:139
+#, python-brace-format
+msgid "Multiple bases found with code {code} !"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:151
+#, python-brace-format
+msgid "Successfully read table {table}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:155
+#, python-brace-format
+msgid "Failed to read table {table}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:170
+#, python-brace-format
+msgid "Successfully inserted record {records}"
+msgid_plural "Successfully inserted records in {records}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ..\core\AlchemyLocal.py:177
+#, python-brace-format
+msgid "Failed to insert record {records}"
+msgid_plural "Failed to insert records in {records}"
+msgstr[0] ""
+msgstr[1] ""
+
+#: ..\core\AlchemyLocal.py:191
+msgid "all tables created in local"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:194
+msgid "failed to create local public tables"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:205
+#, python-brace-format
+msgid "Local DB at location {location} has at least one base"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:209
+#, python-brace-format
+msgid "Local DB at location {location} has no bases"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:213 ..\core\AlchemyLocal.py:234
+#, python-brace-format
+msgid "Unable to query local DB at location {location}"
+msgstr ""
+
+#: ..\core\AlchemyLocal.py:230
+#, python-brace-format
+msgid "List of bases in local DB : {list}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:56 ..\core\AlchemyRemote.py:78
+#, python-brace-format
+msgid "Remote DB login has failed for credentials {login} / {password}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:108
+#, python-brace-format
+msgid "App-level password change success for user {user}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:118
+#, python-brace-format
+msgid "SQL-level password change success for user {user}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:121
+#, python-brace-format
+msgid ""
+"Password change failed for {name}; current user / password pair provided "
+"doesn't match"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:125
+#, python-brace-format
+msgid ""
+"Password change failed for {name}; current user / password pair has multiple "
+"matches !"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:130
+#, python-brace-format
+msgid "Failed to update password for {name}. Rollback has been issued."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:139
+#, python-brace-format
+msgid "New password is now in effect for user {user}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:144
+#, python-brace-format
+msgid ""
+"Password change has failed for {name}; login has been denied with the new "
+"password."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:169
+#, python-brace-format
+msgid "SQL role {h_login} ({plain}) created"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:179
+#, python-brace-format
+msgid "App credentials for {plain} created"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:184
+#, python-brace-format
+msgid "Creation of user {plain} failed"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:211
+#, python-brace-format
+msgid "Base {name} added to the table"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:224
+#, python-brace-format
+msgid "Group role for base {name} has been created and added to H3 users"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:230
+#, python-brace-format
+msgid "Failed to create base {name}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:254
+#, python-brace-format
+msgid "User {name} found in remote DB."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:258
+#, python-brace-format
+msgid "User {name} not found in remote DB."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:262
+#, python-brace-format
+msgid "Multiple results for username {name} found in remote DB."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:280
+msgid "No current contract."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:300
+msgid "Created DB with name h3a"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:312
+msgid "All tables created in remote"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:315
+msgid "Failed to init default H3 DB; dropping."
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:393
+msgid "Created users group role"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:395
+msgid "Created FP group role"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:409
+msgid "Given users rights to FP group role"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:411
+msgid "Given FP group role to root user"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:413
+msgid "Removed creation rights from reader user"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:415
+msgid "Users group can now SELECT all tables"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:417
+msgid "FP group can now change users and bases tables"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:419
+msgid "Reader role can now see users and bases (only)"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:423
+msgid "Basic rights granted to H3 default roles"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:426
+msgid "Root job inserted"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:428
+msgid "Root contract inserted"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:445
+msgid "Root contract actions inserted"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:447
+msgid "Root data inserted"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:448
+msgid "DB init successful"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:451
+msgid "DB init failed, see log.txt for details"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:452
+msgid "Failed to init root data"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:479
+msgid "Default DB and roles successfully wiped out"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:480
+msgid "DB Wipe successful"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:482
+msgid "Failed to clean up default DB and roles"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:483
+msgid "DB Wipe failed, see log.txt for details"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:524
+#, python-brace-format
+msgid "Active job found in remote for user {name} : {job} - {title}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:528
+#, python-brace-format
+msgid "No active jobs found in remote for user {name}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:532
+#, python-brace-format
+msgid "Multiple active jobs found in remote for user {name} !"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:535
+#, python-brace-format
+msgid "Querying the remote DB for {user}'s current job failed"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:548
+#, python-brace-format
+msgid "Actions in remote for contract {job}, {base} : {list}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:552
+#, python-brace-format
+msgid "No actions found in remote for contract {job}, {base}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:556
+msgid "Querying the remote DB for actions failed"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:568
+#, python-brace-format
+msgid "Delegations in remote to contract {job}, {base} : {list}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:572
+#, python-brace-format
+msgid "No delegations found in remote for contract {job}, {base}"
+msgstr ""
+
+#: ..\core\AlchemyRemote.py:576
+msgid "Querying the remote DB for delegations failed"
+msgstr ""
