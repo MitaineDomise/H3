@@ -52,7 +52,7 @@
      <item>
       <widget class="QLineEdit" name="loginLineEdit">
        <property name="text">
-        <string>new</string>
+        <string>root</string>
        </property>
       </widget>
      </item>
@@ -66,7 +66,7 @@
      <item>
       <widget class="QLineEdit" name="passwordLineEdit">
        <property name="text">
-        <string>bastardo</string>
+        <string>secret</string>
        </property>
        <property name="echoMode">
         <enum>QLineEdit::Password</enum>

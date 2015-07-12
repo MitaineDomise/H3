@@ -71,6 +71,12 @@
    </property>
   </widget>
   <widget class="QDockWidget" name="Actions">
+   <property name="sizePolicy">
+    <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+     <horstretch>0</horstretch>
+     <verstretch>0</verstretch>
+    </sizepolicy>
+   </property>
    <property name="floating">
     <bool>false</bool>
    </property>
@@ -98,7 +104,11 @@
       <number>0</number>
      </property>
      <item>
-      <widget class="QListView" name="listView"/>
+      <widget class="QTreeView" name="treeView">
+       <property name="headerHidden">
+        <bool>true</bool>
+       </property>
+      </widget>
      </item>
     </layout>
    </widget>

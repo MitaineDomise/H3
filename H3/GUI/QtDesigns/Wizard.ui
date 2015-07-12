@@ -96,13 +96,20 @@
       <property name="enabled">
        <bool>true</bool>
       </property>
+      <property name="text">
+       <string>1.txt</string>
+      </property>
       <property name="readOnly">
        <bool>true</bool>
       </property>
      </widget>
     </item>
     <item row="2" column="1">
-     <widget class="QLineEdit" name="remoteAddress"/>
+     <widget class="QLineEdit" name="remoteAddress">
+      <property name="text">
+       <string>localhost</string>
+      </property>
+     </widget>
     </item>
     <item row="0" column="2">
      <widget class="QPushButton" name="browseButton">
@@ -213,6 +220,9 @@
     </item>
     <item row="2" column="1" colspan="2">
      <widget class="QLineEdit" name="passwordLineEdit">
+      <property name="text">
+       <string>secret</string>
+      </property>
       <property name="echoMode">
        <enum>QLineEdit::Password</enum>
       </property>
@@ -239,7 +249,11 @@
      </widget>
     </item>
     <item row="0" column="1">
-     <widget class="QLineEdit" name="usernameLineEdit"/>
+     <widget class="QLineEdit" name="usernameLineEdit">
+      <property name="text">
+       <string>root</string>
+      </property>
+     </widget>
     </item>
     <item row="4" column="1" colspan="2">
      <widget class="QLabel" name="passwordStatusLabel">

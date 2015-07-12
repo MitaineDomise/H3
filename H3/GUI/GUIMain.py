@@ -1,4 +1,3 @@
-# coding: utf-8
 __author__ = 'Man'
 
 import sys
@@ -11,118 +10,6 @@ from H3.core.AlchemyCore import H3AlchemyCore
 H3Core = H3AlchemyCore()
 
 logger = logging.getLogger(__name__)
-
-
-class H3MainGUI(QtGui.QWidget):
-    """
-    This is the main visual interface init for the program.
-    It pops the Login Box by default, and handles creation of other dialogs,
-    as well as switching the main window's central widget.
-    """
-
-    def __init__(self):
-        super(H3MainGUI, self).__init__()  # Calls the QWidget constructor.
-        self.load_resource_file()  # loads H3.rcc, skinnable
-        self.root_window = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Main.ui"), self)
-        # TODO : Have Status bar watch the log file for messages (store in a tablemodel)+"local DB Accessible" indicator
-        # TODO : Make main window (and others) resolution-adequate
-
-        while not H3Core.ready():
-            self.run_setup_wizard()
-
-        self.root_window.show()
-
-        LoginBox(self)  # Builds the all-important login box as a child of root
-
-        self.root_window.setWindowTitle(_("{name}, {job}, {base}")
-                                        .format(name=H3Core.full_name,
-                                                job=H3Core.job_desc,
-                                                base=H3Core.base_name))
-        # self.ui_switcher(user.job_desc)
-        self.root_window.listView.setModel(QtGui.QStringListModel(["Messages",
-                                                                   "Manage bases",
-                                                                   "Manage users",
-                                                                   "Action 4"]))
-
-        self.root_window.listView.clicked.connect(self.do_something)
-
-        # MessagesList(self, H3Core.current_user)
-
-    @staticmethod
-    def load_resource_file():
-        if QtCore.QResource.registerResource("H3/GUI/QtDesigns/H3.rcc"):
-            logger.debug(_("Resource file opened successfully"))
-        else:
-            logger.warning(_("Error loading resource file"))
-
-    @QtCore.Slot(int)
-    def do_something(self, num):
-        if num.row() == 2:
-            # ManageUsersScreen(self)
-            pass
-
-    def ui_init(self):
-        # actions = H3Core.current_actions()
-        # delegations = H3Core.current_delegations()
-        pass
-
-    def ui_switcher(self, screen='jobhome'):
-        if screen == 'jobhome':
-            self.ui_switcher(H3Core.current_user.job_desc)
-        elif screen == 'PM':
-            # PMMenu(self)
-            pass
-        elif screen == 'project':
-            # ProjectMenu(self)
-            pass
-        elif screen == 'FP':
-            # FPMenu(self)
-            pass
-        elif screen == 'LOG':
-            pass
-            # log_menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/LogMenu.ui"))
-            # self.H3_root_window.setCentralWidget(LogMenu)
-
-    def run_setup_wizard(self):
-        SetupWizard(self)
-
-    def set_status(self, status_string):
-        self.root_window.statusbar.showMessage(status_string, 2000)
-
-
-class LoginBox(QtGui.QWidget):
-    """
-    This is the first thing that greets the user.
-    It has the logic for 5 login retries maximum.
-    If local login is accepted, the main window adapts to the user.
-    If not, the program exits.
-    It can ask the main class to start the new user wizard.
-    """
-
-    def __init__(self, parent):
-        super(LoginBox, self).__init__(parent)
-        self.login_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/LoginBox.ui"), self)
-        self.login_attempts = 0
-
-        self.login_box.pushButton.clicked.connect(self.login_clicked)
-        self.login_box.new_user_pushButton.clicked.connect(self.parent().run_setup_wizard)
-
-        if self.login_box.exec_() == QtGui.QDialog.Rejected:
-            sys.exit()
-
-    def login_clicked(self):
-        if self.login_attempts < 4:
-            self.login_attempts += 1
-            username = self.login_box.loginLineEdit.text()
-            password = self.login_box.passwordLineEdit.text()
-            if H3Core.local_login(username, password):
-                self.login_box.accept()
-                self.parent().set_status(_("Successfully logged in as %(name)s") % {"name": username})
-            else:
-                self.parent().set_status("login failed, " + str((5 - self.login_attempts)) + " remaining")
-        else:
-            self.login_box.reject()
-
 
 class SetupWizard(QtGui.QWidget):
     """
@@ -183,8 +70,7 @@ class SetupWizard(QtGui.QWidget):
         password = self.wizard.passwordLineEdit.text()
         H3Core.remote_login(username, password)
         H3Core.download_user_tables()
-        # H3Core.download_base_tables()
-        self.parent().ui_init()
+        H3Core.download_base_tables()
 
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
@@ -318,7 +204,6 @@ class SetupWizard(QtGui.QWidget):
             self.pw_ok = False
             self.wizard.wizardPage3.completeChanged.emit()
 
-
 class ServerWizardPage(QtGui.QWizardPage):
     def __init__(self, parent):
         super(ServerWizardPage, self).__init__(parent)
@@ -329,7 +214,6 @@ class ServerWizardPage(QtGui.QWizardPage):
             return True
         else:
             return False
-
 
 class LoginWizardPage(QtGui.QWizardPage):
     def __init__(self, parent):
@@ -350,7 +234,6 @@ class LoginWizardPage(QtGui.QWizardPage):
         self.wizard().confirmPasswordLineEdit.hide()
         self.wizard().confirmPasswordLabel.hide()
 
-
 class RecapWizardPage(QtGui.QWizardPage):
     def __init__(self, parent):
         super(RecapWizardPage, self).__init__(parent)
@@ -359,7 +242,9 @@ class RecapWizardPage(QtGui.QWizardPage):
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
-        self.wizard().nameRecap.setText(H3Core.full_name)
+        self.wizard().nameRecap.setText(_("{first} {last}") \
+                                        .format(first=H3Core.current_user.first_name,
+                                                last=H3Core.current_user.last_name))
 
         if H3Core.user_state == "no_job":
             self.wizard().jobRecap.setText(_("No current contract"))
@@ -368,9 +253,9 @@ class RecapWizardPage(QtGui.QWizardPage):
                                                     " because it's not currently active"))
         else:
             self.wizard().jobRecap.setText(H3Core.current_job_contract.job_code + " - "
-                                           + H3Core.job_desc)
-            self.wizard().baseRecap.setText(H3Core.base_code + " - "
-                                            + H3Core.base_name)
+                                           + H3Core.current_job_contract.job_title)
+            self.wizard().baseRecap.setText(H3Core.current_job_contract.base + " - "
+                                            + H3Core.base_full_name(H3Core.current_job_contract.base))
 
             if H3Core.user_state == "local":
                 self.wizard().userActionRecap.setText(_("The user profile was already set up in the local database."
@@ -391,18 +276,176 @@ class RecapWizardPage(QtGui.QWizardPage):
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
 
-            H3Core.download_current_user_info()
+            H3Core.download_current_user_job_contract()
 
+
+class LoginBox(QtGui.QWidget):
+    """
+    This is the first thing that greets the user.
+    It has the logic for 5 login retries maximum.
+    If local login is accepted, the main window adapts to the user.
+    If not, the program exits.
+    It can ask the main class to start the new user wizard.
+    """
+
+    def __init__(self, parent):
+        super(LoginBox, self).__init__(parent)
+        self.login_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/LoginBox.ui"), self)
+        self.login_attempts = 0
+
+        if H3Core.current_user:
+            self.login_box.loginLineEdit.setText(H3Core.current_user.login)
+
+        self.login_box.pushButton.clicked.connect(self.login_clicked)
+        self.login_box.new_user_pushButton.clicked.connect(self.parent().run_setup_wizard)
+
+        if self.login_box.exec_() == QtGui.QDialog.Rejected:
+            sys.exit()
+
+    def login_clicked(self):
+        if self.login_attempts < 4:
+            username = self.login_box.loginLineEdit.text()
+            password = self.login_box.passwordLineEdit.text()
+            H3Core.local_login(username, password)
+            if H3Core.user_state == "ok":
+                self.login_box.accept()
+                self.parent().set_status(_("Successfully logged in as %(name)s") % {"name": username})
+            elif H3Core.user_state == "new_base":
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
+                                                _(
+                                                    "This user is currently affected to a base that is not present in the "
+                                                    "local database. Maybe the user got promoted to a new base, or this is "
+                                                    "H3 installation is old. Please run the setup wizard."),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
+            elif H3Core.user_state == "no_job":
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("No active job contract"),
+                                                _(
+                                                    "This user is currently not employed according to the local H3 database; "
+                                                    "Please contact your focal point if this is wrong."),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
+            elif H3Core.user_state == "nok":
+                self.login_attempts += 1
+                self.parent().set_status("login failed, " + str((5 - self.login_attempts)) + " remaining")
+        else:
+            self.login_box.reject()
+
+
+class H3MainGUI(QtGui.QWidget):
+    """
+    This is the main visual interface init for the program.
+    It pops the Login Box by default, and handles creation of other dialogs,
+    as well as switching the main window's central widget.
+    """
+
+    def __init__(self):
+        super(H3MainGUI, self).__init__()
+        self.load_resource_file()
+        self.root_window = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Main.ui"), self)
+
+        # TODO : Have Status bar watch the log file for messages (store in a tablemodel)+"local DB Accessible" indicator
+        # TODO : Make main window (and others) resolution-adequate
+
+        while not H3Core.ready():
+            self.run_setup_wizard()
+
+        self.root_window.show()
+
+        LoginBox(self)
+
+        self.root_window.setWindowTitle(_("{first} {last}, {job}, {base}")
+                                        .format(first=H3Core.current_user.first_name,
+                                                last=H3Core.current_user.last_name,
+                                                job=H3Core.current_job_contract.job_title,
+                                                base=H3Core.base_full_name(H3Core.current_job_contract.base)))
+
+        actions_model = self.build_actions_menu()
+        self.root_window.treeView.setModel(actions_model)
+        self.root_window.treeView.expandAll()
+        self.root_window.treeView.resizeColumnToContents(0)
+
+        self.root_window.treeView.clicked.connect(self.do_something)
+
+    def build_actions_menu(self):
+        H3Core.get_actions()
+        model = QtGui.QStandardItemModel()
+
+        categories = set()
+        action_items = list()
+
+        for contract_action in H3Core.contract_actions:
+            desc = H3Core.get_action_descriptions(contract_action.action)
+            categories.add(desc.category)
+            item = QtGui.QStandardItem(desc.description)
+            item.setData(contract_action, 33)
+            item.setData(desc, 34)
+            action_items.append(item)
+
+        for delegation in H3Core.delegations:
+            desc = H3Core.get_action_descriptions(delegation.action)
+            categories.add(desc.category)
+            item = QtGui.QStandardItem(desc.description)
+            item.setData(delegation, 33)
+            item.setData(desc, 34)
+            item.setBackground(QtGui.QBrush(QtCore.Qt.green))
+            action_items.append(item)
+
+        for cat in categories:
+            cat_item = QtGui.QStandardItem(cat)
+            for item in action_items:
+                action = item.data(34)
+                if action.category == cat:
+                    cat_item.appendRow(item)
+            model.appendRow(cat_item)
+
+        return model
+
+    @staticmethod
+    def load_resource_file():
+        if QtCore.QResource.registerResource("H3/GUI/QtDesigns/H3.rcc"):
+            logger.debug(_("Resource file opened successfully"))
+        else:
+            logger.warning(_("Error loading resource file"))
+
+    @QtCore.Slot(int)
+    def do_something(self, num):
+        if num.row() == 2:
+            # ManageUsersScreen(self)
+            pass
+
+    def ui_switcher(self, screen='jobhome'):
+        if screen == 'jobhome':
+            self.ui_switcher(H3Core.current_user.job_desc)
+        elif screen == 'PM':
+            # PMMenu(self)
+            pass
+        elif screen == 'project':
+            # ProjectMenu(self)
+            pass
+        elif screen == 'FP':
+            # FPMenu(self)
+            pass
+        elif screen == 'LOG':
+            pass
+            # log_menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/LogMenu.ui"))
+            # self.H3_root_window.setCentralWidget(LogMenu)
+
+    def run_setup_wizard(self):
+        SetupWizard(self)
+
+    def set_status(self, status_string):
+        self.root_window.statusbar.showMessage(status_string, 2000)
 
 def run():
     h3app = QtGui.QApplication(sys.argv)
     h3gui = H3MainGUI()
     h3app.exec_()
 
-
 def init_remote(location, password):
     H3Core.init_remote(location, password)
-
 
 def nuke_remote(location, password):
     H3Core.nuke_remote(location, password)

@@ -21,20 +21,20 @@ class H3AlchemyLocalDB:
     """
     Handles the interaction with the local DB, here SQLite but could be swapped out for any other backend.
     """
-    def __init__(self, core, location):
+
+    def __init__(self, location):
         """
         Builds the local DB engine on SQLite. The local engine is always running and connected.
         Additional checks when accessing data ensure the current user is still authorized.
-        :param core: the core that built this engine
         :param location: the path to the SQLite database file
         :return:
         """
-        self.core = core
         self.location = location
-        self.engine = sqlalchemy.create_engine('sqlite+pysqlite:///{address}'
-                                               .format(address=self.location))
-        SessionLocal.configure(bind=self.engine)
-        listen(self.engine, 'connect', self.activate_foreign_keys)
+        if self.location:
+            self.engine = sqlalchemy.create_engine('sqlite+pysqlite:///{address}'
+                                                   .format(address=self.location))
+            SessionLocal.configure(bind=self.engine)
+            listen(self.engine, 'connect', self.activate_foreign_keys)
 
     @staticmethod
     def activate_foreign_keys(db_api_connection, connection_record):
@@ -56,9 +56,6 @@ class H3AlchemyLocalDB:
         :param password:
         :return:
         """
-        self.engine = sqlalchemy.create_engine('sqlite+pysqlite:///{address}'
-                                               .format(address=self.location))
-        SessionLocal.configure(bind=self.engine)
         session = SessionLocal()
         hashed_pass = hashlib.md5((password + username).encode(encoding='ascii')).hexdigest()
         try:
@@ -69,12 +66,10 @@ class H3AlchemyLocalDB:
             logger.debug(_("Successfully logged in with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
             return user
-        except sqlalchemy.orm.exc.NoResultFound:
+        except sqlalchemy.exc.SQLAlchemyError:
             logger.debug(_("Impossible to login with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
-        except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple matches found for pair {user} / {password} !")
-                         .format(user=username, password=hashed_pass))
+            return False
 
     def get_user(self, username):
         """
@@ -90,12 +85,8 @@ class H3AlchemyLocalDB:
             logger.debug(_("User {user} found in local DB.")
                          .format(user=username))
             return user
-        except sqlalchemy.orm.exc.NoResultFound:
+        except sqlalchemy.exc.SQLAlchemyError:
             logger.debug(_("User {user} not found in local DB.")
-                         .format(user=username))
-            return False
-        except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple user records for username {user} found in local DB !")
                          .format(user=username))
             return False
 
@@ -123,21 +114,18 @@ class H3AlchemyLocalDB:
             logger.error(_("Multiple active jobs found in local for user {name} !")
                          .format(name=user.login))
 
-    def get_base_fullname(self, base_code):
+    def get_base_full_name(self, base_code):
         try:
             session = SessionLocal()
             base = session.query(Acd.WorkBase) \
-                          .filter(Acd.WorkBase.id == base_code) \
-                          .one()
+                .filter(Acd.WorkBase.code == base_code) \
+                .one()
             logger.debug(_("Base {code} found in local table, with name {name}")
                          .format(code=base_code, name=base.full_name))
             return base.full_name
-        except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("Base {code} not found")
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.info(_("Error fetching full name of base {code}")
                         .format(code=base_code))
-        except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple bases found with code {code} !")
-                         .format(code=base_code))
 
     def read_table(self, class_of_table):
         """
@@ -216,21 +204,58 @@ class H3AlchemyLocalDB:
 
     def get_local_bases(self):
         """
-        Queries the local DB for bases stored, starting from job contracts.
+        Queries the local DB for job contracts stored in local DB, extracting the current bases
         :return: list of bases
         """
         try:
             session = SessionLocal()
-            bases = session.query(Acd.JobContract.base) \
+            job_contracts = session.query(Acd.JobContract) \
                 .group_by(Acd.JobContract.base) \
                 .all()
             unique_bases = list()
-            for base in bases:
-                unique_bases.append(base[0])
+            for job_contract in job_contracts:
+                unique_bases.append(job_contract.base)
             logger.debug(_("List of bases in local DB : {list}")
                          .format(list=str(unique_bases)))
             return unique_bases
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.warning(_("Unable to query local DB at location {location}")
+            logger.warning(_("Unable to query local DB at location {location} for local bases")
                            .format(location=self.location))
             return False
+
+    def get_contract_actions(self, job_contract):
+        try:
+            session = SessionLocal()
+            actions = session.query(Acd.ContractAction) \
+                .filter(Acd.ContractAction.contract == job_contract.auto_id) \
+                .all()
+            return actions
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Unable to query local DB for actions linked to contract {id}")
+                             .format(id=job_contract.auto_id))
+            return False
+
+    def get_current_delegations(self, job_contract):
+        try:
+            session = SessionLocal()
+            delegations = session.query(Acd.Delegation) \
+                .filter(Acd.Delegation.delegated_to == job_contract.auto_id) \
+                .filter(Acd.Delegation.start_date <= datetime.date.today(),
+                        Acd.Delegation.end_date >= datetime.date.today()) \
+                .all()
+            return delegations
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Unable to query local DB for delegations given to contract {id}")
+                             .format(id=job_contract.auto_id))
+            return False
+
+    def get_action_descriptions(self, id, lang):
+        try:
+            session = SessionLocal()
+            description = session.query(Acd.Action) \
+                .filter(Acd.Action.code == id, Acd.Action.language == lang) \
+                .one()
+            return description
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Error while trying to fetch {lang} description for Action {id}")
+                             .format(lang=lang, id=id))

@@ -20,15 +20,14 @@ class H3AlchemyRemoteDB:
     """
     Handles the interaction with the local DB, here PostGreSQL but could be swapped out for any other backend.
     """
-    def __init__(self, core, location):
+
+    def __init__(self, location):
         """
         Builds the remote DB engine on PostGreSQL; the remote engine is only running when needed.
         The credentials used depend on the current use, on a per-function basis.
-        :param core: the core that built this engine
         :param location: the DB server holding the main database (needs to be called H3A)
         :return:
         """
-        self.core = core
         self.location = location
         self.engine = None
 
@@ -52,7 +51,7 @@ class H3AlchemyRemoteDB:
             SessionRemote.configure(bind=self.engine)
             self.engine.connect()
             return True
-        except sqlalchemy.exc.SQLAlchemyError:
+        except (sqlalchemy.exc.SQLAlchemyError, UnicodeError):
             logger.info(_("Remote DB login has failed for credentials {login} / {password}")
                         .format(login=username, password=password))
             return False
@@ -74,7 +73,7 @@ class H3AlchemyRemoteDB:
             SessionRemote.configure(bind=self.engine)
             self.engine.connect()
             return True
-        except sqlalchemy.exc.SQLAlchemyError:
+        except (sqlalchemy.exc.SQLAlchemyError, UnicodeError):
             logger.info(_("Remote DB login has failed for credentials {login} / {password}")
                         .format(login=username, password=password))
             return False
@@ -109,7 +108,7 @@ class H3AlchemyRemoteDB:
                          .format(user=username))
 
             # SQL-level, will fail if not for self
-            query = sqlalchemy.text('ALTER ROLE \"{name}\" WITH PASSWORD \'{password}\';'
+            query = sqlalchemy.text('ALTER ROLE "{name}" WITH PASSWORD \'{password}\';'
                                     .format(name=username, password=new_pass))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -160,7 +159,7 @@ class H3AlchemyRemoteDB:
 
             # SQL-level
             conn = self.engine.connect()
-            query = sqlalchemy.text('CREATE USER \"{h_login}\" WITH PASSWORD \'{password}\';'
+            query = sqlalchemy.text('CREATE USER "{h_login}" WITH PASSWORD \'{password}\';'
                                     .format(h_login=hashed_login, password=user.pw_hash))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -184,7 +183,7 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Creation of user {plain} failed")
                              .format(plain=user.login))
             session.rollback()
-            query = sqlalchemy.text('DROP USER IF EXISTS \"{login}\";'
+            query = sqlalchemy.text('DROP USER IF EXISTS "{login}";'
                                     .format(login=hashed_login))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -213,9 +212,9 @@ class H3AlchemyRemoteDB:
 
             # SQL-level
             query1 = sqlalchemy.text('CREATE ROLE {base}_users;'
-                                     .format(base=base.id.lower()))
+                                     .format(base=base.code.lower()))
             query2 = sqlalchemy.text('GRANT h3_users TO {base}_users;'
-                                     .format(base=base.id.lower()))
+                                     .format(base=base.code.lower()))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query1)
@@ -233,7 +232,7 @@ class H3AlchemyRemoteDB:
             session.rollback()
 
             query = sqlalchemy.text('DROP ROLE IF EXISTS {base}_users;'
-                                    .format(base=base.id.lower()))
+                                    .format(base=base.code.lower()))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
@@ -293,8 +292,8 @@ class H3AlchemyRemoteDB:
         meta = Acd.Base.metadata
 
         try:
-            query1 = sqlalchemy.text("CREATE DATABASE h3a;")
-            query2 = sqlalchemy.text("SET lc_messages = 'UTF8';")
+            query1 = sqlalchemy.text("CREATE DATABASE h3a WITH TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C';")
+            query2 = sqlalchemy.text('ALTER DATABASE h3a SET lc_messages = "C";')
             cnx.execute(query1)
             cnx.execute(query2)
             logger.debug(_("Created DB with name h3a"))
@@ -304,7 +303,7 @@ class H3AlchemyRemoteDB:
                                                                              password=password,
                                                                              host=self.location,
                                                                              port=5432,
-                                                                             database='h3a', ))
+                                                                             database='h3a'))
             SessionRemote.configure(bind=self.engine)
             session = SessionRemote()
             cnx = self.engine.connect()
@@ -331,7 +330,7 @@ class H3AlchemyRemoteDB:
                              created_date=datetime.date.today(),
                              banned_date=datetime.date(3000, 6, 6))
 
-        root_base = Acd.WorkBase(id='root',
+        root_base = Acd.WorkBase(code='root',
                                  parent='root',
                                  full_name='Hierarchy root',
                                  opened_date=datetime.date.today(),
@@ -339,9 +338,9 @@ class H3AlchemyRemoteDB:
                                  country='XX',
                                  time_zone='UTC')
 
-        root_job = Acd.Job(id='FP')
+        root_job = Acd.Job(code='FP')
 
-        root_contract = Acd.JobContract(id=1,
+        root_contract = Acd.JobContract(auto_id=1,
                                         user='root',
                                         start_date=datetime.date.today(),
                                         end_date=datetime.date(3000, 6, 6),
@@ -349,11 +348,26 @@ class H3AlchemyRemoteDB:
                                         job_title='Global FP',
                                         base='root')
 
-        root_a_1 = Acd.Action(id='manage_users')
-        root_a_2 = Acd.Action(id='manage_bases')
-        root_a_3 = Acd.Action(id='manage_jobs')
-        root_a_4 = Acd.Action(id='manage_job_contracts')
-        root_a_5 = Acd.Action(id='manage_contract_actions')
+        root_a_1 = Acd.Action(code='manage_users',
+                              language="EN_UK",
+                              category="Administration",
+                              description="Manage users")
+        root_a_2 = Acd.Action(code='manage_bases',
+                              language="EN_UK",
+                              category="Logistics",
+                              description="Manage bases")
+        root_a_3 = Acd.Action(code='manage_jobs',
+                              language="EN_UK",
+                              category="FP",
+                              description="Manage jobs")
+        root_a_4 = Acd.Action(code='manage_job_contracts',
+                              language="EN_UK",
+                              category="Administration",
+                              description="Manage job contracts")
+        root_a_5 = Acd.Action(code='manage_contract_actions',
+                              language="EN_UK",
+                              category="Logistics",
+                              description="Manage contract actions")
 
         root_c_a_1 = Acd.ContractAction(contract=1,
                                         action='manage_users',
@@ -375,10 +389,18 @@ class H3AlchemyRemoteDB:
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_5 = Acd.ContractAction(contract=1,
-                                        action='manage_contract_actions',
-                                        scope='all',
-                                        maximum=-1)
+        # root_c_a_5 = Acd.ContractAction(contract=1,
+        #                                 action='manage_contract_actions',
+        #                                 scope='all',
+        #                                 maximum=-1)
+
+        root_delegation = Acd.Delegation(start_date=datetime.date.today(),
+                                         end_date=datetime.date(3000, 6, 6),
+                                         action='manage_contract_actions',
+                                         delegated_from=1,
+                                         delegated_to=1,
+                                         scope='all',
+                                         maximum=-1)
 
         try:
             cnx = self.engine.connect()
@@ -399,12 +421,12 @@ class H3AlchemyRemoteDB:
             self.create_user(root_user)
             self.create_user(reader_user)
 
-            query4 = sqlalchemy.text('GRANT h3_fps TO \"4f626e28d5c60212d8d38ed00f1444f2\";')
-            query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM \"f66ce97dfce5d8604edab9a721f3b85b\";')
+            query4 = sqlalchemy.text('GRANT h3_fps TO "4f626e28d5c60212d8d38ed00f1444f2";')
+            query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM "f66ce97dfce5d8604edab9a721f3b85b";')
             query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
             query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, actions, job_contracts '
-                                     'TO \"f66ce97dfce5d8604edab9a721f3b85b\";')
+                                     'TO "f66ce97dfce5d8604edab9a721f3b85b";')
 
             logger.debug(_("Given users rights to FP group role"))
             cnx.execute(query4)
@@ -438,7 +460,8 @@ class H3AlchemyRemoteDB:
             session.add(root_c_a_2)
             session.add(root_c_a_3)
             session.add(root_c_a_4)
-            session.add(root_c_a_5)
+            # session.add(root_c_a_5)
+            session.add(root_delegation)
 
             session.commit()
 
@@ -467,8 +490,8 @@ class H3AlchemyRemoteDB:
             query1 = sqlalchemy.text('DROP ROLE IF EXISTS h3_fps;')
             query2 = sqlalchemy.text('DROP ROLE IF EXISTS h3_users;')
             query3 = sqlalchemy.text('DROP ROLE IF EXISTS root_users;')
-            query4 = sqlalchemy.text('DROP ROLE IF EXISTS \"4f626e28d5c60212d8d38ed00f1444f2\";')
-            query5 = sqlalchemy.text('DROP ROLE IF EXISTS \"f66ce97dfce5d8604edab9a721f3b85b\";')
+            query4 = sqlalchemy.text('DROP ROLE IF EXISTS "4f626e28d5c60212d8d38ed00f1444f2";')
+            query5 = sqlalchemy.text('DROP ROLE IF EXISTS "f66ce97dfce5d8604edab9a721f3b85b";')
             conn.execute(query0)
             conn.execute(query1)
             conn.execute(query2)
@@ -543,7 +566,7 @@ class H3AlchemyRemoteDB:
         try:
             session = SessionRemote()
             actions_list = session.query(Acd.ContractAction) \
-                .filter(Acd.ContractAction.contract == job_contract.id) \
+                .filter(Acd.ContractAction.contract == job_contract.auto_id) \
                 .all()
             logger.debug(_("Actions in remote for contract {job}, {base} : {list}")
                          .format(job=job_contract.job_title, base=job_contract.base, list=actions_list))
@@ -563,10 +586,10 @@ class H3AlchemyRemoteDB:
         try:
             session = SessionRemote()
             delegations_list = session.query(Acd.Delegation) \
-                .filter(Acd.Delegation.delegated_to == job_contract.id) \
+                .filter(Acd.Delegation.delegated_to == job_contract.auto_id) \
                 .all()
             logger.debug(_("Delegations in remote to contract {job}, {base} : {list}")
-                         .format(job=job_contract.job_title, base=job_contract.base, list=delegations_list.values()))
+                         .format(job=job_contract.job_title, base=job_contract.base, list=delegations_list))
             return delegations_list
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No delegations found in remote for contract {job}, {base}")

@@ -10,8 +10,8 @@ Base = sqlalchemy.ext.declarative.declarative_base()
 class WorkBase(Base):
     __tablename__ = 'bases'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie SHB
-    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.id'))
+    code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie SHB
+    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -20,7 +20,7 @@ class WorkBase(Base):
     country = sqlalchemy.Column(sqlalchemy.String(2))  # 2-char country code, ISO-3166
     time_zone = sqlalchemy.Column(sqlalchemy.String)
 
-    parent_self_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('bases', remote_side=id))
+    parent_self_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('bases', remote_side=code))
 
 
 class User(Base):
@@ -38,14 +38,14 @@ class User(Base):
 class JobContract(Base):
     __tablename__ = 'job_contracts'
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
     start_date = sqlalchemy.Column(sqlalchemy.Date)
     end_date = sqlalchemy.Column(sqlalchemy.Date)
-    job_code = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('jobs.id'))
+    job_code = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('jobs.code'))
     job_title = sqlalchemy.Column(sqlalchemy.String)
-    base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.id'))
+    base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
 
     base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('job_contracts'),
                                           foreign_keys=base)
@@ -58,36 +58,43 @@ class JobContract(Base):
 class Action(Base):
     __tablename__ = 'actions'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie manage_bases
+    code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie manage_bases
+    language = sqlalchemy.Column(sqlalchemy.String)  # For localization !
+    category = sqlalchemy.Column(sqlalchemy.String)  # ie "Stocks management"
+    description = sqlalchemy.Column(sqlalchemy.String)
 
 
 class ContractAction(Base):
     __tablename__ = 'contract_actions'
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
-    contract = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
-    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.id'))
+    contract = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
     scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
     maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
 
+    contract_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('contract_actions'),
+                                              foreign_keys=contract)
+    action_fk = sqlalchemy.orm.relationship('Action', backref=sqlalchemy.orm.backref('contract_actions'),
+                                            foreign_keys=action)
 
 class Job(Base):
     __tablename__ = 'jobs'
 
-    id = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie FP
+    code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie FP
 
 
 class Delegation(Base):
     __tablename__ = 'delegations'
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     start_date = sqlalchemy.Column(sqlalchemy.Date)
     end_date = sqlalchemy.Column(sqlalchemy.Date)
-    role = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.id'))
-    delegated_from = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
-    delegated_to = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.id'))
+    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
+    delegated_from = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+    delegated_to = sqlalchemy.Column(sqlalchemy.Integer, sqlalchemy.ForeignKey('job_contracts.auto_id'))
     scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
     maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
 
@@ -102,9 +109,9 @@ class SyncJournal(Base):
 
     # Inserts only. Get all inserts, from the "versioning rows" SQL Alchemy example...?
     # Or get both inserts and updates ?
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
-    origin_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.id'))
+    origin_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
     origin_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
     status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified / Rejected
     local_timestamp = sqlalchemy.Column(sqlalchemy.Date)
@@ -115,10 +122,10 @@ class SyncJournal(Base):
     origin_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'))
 
 
-class SyncCursor(Base):
+class SyncCursor(Base):  # Shouldn't the cursor be in a config file ?
     __tablename__ = 'sync_cursors'
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     user = sqlalchemy.Column(sqlalchemy.String)
     base = sqlalchemy.Column(sqlalchemy.String)
@@ -129,7 +136,7 @@ class SyncCursor(Base):
 class Message(Base):
     __tablename__ = 'messages'
 
-    id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
+    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     sender = sqlalchemy.Column(sqlalchemy.String)
     addressee = sqlalchemy.Column(sqlalchemy.String)
