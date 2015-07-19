@@ -136,11 +136,11 @@ class H3AlchemyLocalDB:
         try:
             session = SessionLocal()
             table = session.query(class_of_table).all()
-            logger.debug(_("Successfully read table {table}")
+            logger.debug(_("Successfully read table {table} from local")
                          .format(table=class_of_table))
             return table
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.error(_("Failed to read table {table}")
+            logger.error(_("Failed to read table {table} from local")
                          .format(table=class_of_table))
             return False
 
@@ -259,3 +259,13 @@ class H3AlchemyLocalDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Error while trying to fetch {lang} description for Action {id}")
                              .format(lang=lang, id=id))
+
+    def get_last_synced_entry(self):
+        try:
+            session = SessionLocal()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                .one()
+            return latest.auto_id
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to identify the latest synced transaction in local"))

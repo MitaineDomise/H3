@@ -1,13 +1,14 @@
 __author__ = 'Man'
 
-
 import sqlalchemy.orm
 import sqlalchemy.ext.declarative
+
+from .AlchemyTemporal import Versioned
 
 Base = sqlalchemy.ext.declarative.declarative_base()
 
 
-class WorkBase(Base):
+class WorkBase(Base, Versioned):
     __tablename__ = 'bases'
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # ie SHB
@@ -23,7 +24,7 @@ class WorkBase(Base):
     parent_self_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('bases', remote_side=code))
 
 
-class User(Base):
+class User(Base, Versioned):
     __tablename__ = 'users'
 
     login = sqlalchemy.Column(sqlalchemy.String, primary_key=True)  # i.e ebertolus
@@ -79,6 +80,7 @@ class ContractAction(Base):
     action_fk = sqlalchemy.orm.relationship('Action', backref=sqlalchemy.orm.backref('contract_actions'),
                                             foreign_keys=action)
 
+
 class Job(Base):
     __tablename__ = 'jobs'
 
@@ -107,30 +109,32 @@ class Delegation(Base):
 class SyncJournal(Base):
     __tablename__ = 'sync_journal'
 
-    # Inserts only. Get all inserts, from the "versioning rows" SQL Alchemy example...?
     # Or get both inserts and updates ?
     auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
     origin_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
+    target_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
     origin_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
+    target_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
+    type = sqlalchemy.Column(sqlalchemy.String)  # Create / Update / Delete
+    table = sqlalchemy.Column(sqlalchemy.String)  # ie "bases"
+    key = sqlalchemy.Column(sqlalchemy.String)  # code of the sync entry
     status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified / Rejected
     local_timestamp = sqlalchemy.Column(sqlalchemy.Date)
-    local_code = sqlalchemy.Column(sqlalchemy.String)
-    submitted_timestamp = sqlalchemy.Column(sqlalchemy.Date)
+    processed_timestamp = sqlalchemy.Column(sqlalchemy.Date)
 
-    origin_base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('journal'))
-    origin_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'))
+    origin_base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('journal'),
+                                                 foreign_keys=origin_base)
+    target_base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('journal'),
+                                                 foreign_keys=target_base)
+    origin_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'),
+                                                 foreign_keys=origin_user)
+    target_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'),
+                                                 foreign_keys=target_user)
 
 
-class SyncCursor(Base):  # Shouldn't the cursor be in a config file ?
-    __tablename__ = 'sync_cursors'
-
-    auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
-
-    user = sqlalchemy.Column(sqlalchemy.String)
-    base = sqlalchemy.Column(sqlalchemy.String)
-    last_synced = sqlalchemy.Column(sqlalchemy.DateTime)
-    last_transaction_synced = sqlalchemy.Column(sqlalchemy.Integer)  # From SyncJournal
+# class SyncCursor(Base):  # Shouldn't the cursor be in a config file ?
+#     last_transaction_synced (from sync journal) in the config and that's it !
 
 
 class Message(Base):
@@ -144,7 +148,6 @@ class Message(Base):
     received = sqlalchemy.Column(sqlalchemy.Date)
     transaction_ref = sqlalchemy.Column(sqlalchemy.String)
     body = sqlalchemy.Column(sqlalchemy.String)
-
 
     # Project - DonorBudgetLine - InternalBudgetLine - Activities - Donors
 

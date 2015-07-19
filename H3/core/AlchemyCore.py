@@ -2,6 +2,7 @@ __author__ = 'Man'
 
 import configparser
 import logging
+import datetime
 
 from . import AlchemyLocal, AlchemyRemote
 from . import AlchemyClassDefs as Acd
@@ -22,8 +23,8 @@ class H3AlchemyCore:
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(None)
         self.user_state = ""
 
-        self.current_user = Acd.User
-        self.current_job_contract = Acd.JobContract
+        self.current_user = Acd.User()
+        self.current_job_contract = Acd.JobContract()
         self.base_visibility = []
 
         self.contract_actions = list()
@@ -35,36 +36,40 @@ class H3AlchemyCore:
 
     # General utility functions
 
-    def ping_remote(self, address):
+    @staticmethod
+    def ping_remote(address):
         temp_remote_db = AlchemyRemote.H3AlchemyRemoteDB(address)
         if temp_remote_db.login('reader', 'weak'):
             return 1
         else:
             return 0
 
-    def init_remote(self, location, password):
+    @staticmethod
+    def init_remote(location, password):
         new_db = AlchemyRemote.H3AlchemyRemoteDB(location)
         new_db.master_login('postgres', password)
         logger.debug(_("Connected with master DB credentials"))
         new_db.initialize(password)
 
-    def nuke_remote(self, location, password):
+    @staticmethod
+    def nuke_remote(location, password):
         target_db = AlchemyRemote.H3AlchemyRemoteDB(location)
         target_db.master_login('postgres', password)
         logger.debug(_("Connected with master DB credentials"))
         target_db.nuke()
 
-    def ping_local(self, path):
+    @staticmethod
+    def ping_local(location):
         """
         Checks if the local DB path points to a H3 database
-        :param path:
+        :param location:
         :return:
         """
-        if path == "":
+        if location == "":
             return 0  # open() doesn't error out on an empty filename
         try:
-            open(path)  # Try to open location
-            temp_local_db = AlchemyLocal.H3AlchemyLocalDB(path)
+            open(location)  # Try to open location
+            temp_local_db = AlchemyLocal.H3AlchemyLocalDB(location)
             if temp_local_db.has_a_base():
                 return 1  # This is a H3 DB
             else:
@@ -151,25 +156,26 @@ class H3AlchemyCore:
 
     def download_public_tables(self):
         """
-        First table to be populated entirely from remote as clients need to know the worldwide structure
-        (For users who have had a worldwide career !). Uses reader credentials from first setup.
+        First useful table as clients need to know the worldwide structure as well as existing jobs and actions.
+        Uses reader credentials from wizard.
         """
-        # TODO: supplement that with a proper sync (OK for first setup)
         self.remote_db.login('reader', 'weak')
+        last_entry = self.remote_db.get_last_synced_entry()
         org_table_data = self.remote_db.read_table(Acd.WorkBase)
         all_jobs = self.remote_db.read_table(Acd.Job)
         all_actions = self.remote_db.read_table(Acd.Action)
+        self.local_db.put(last_entry)
         self.local_db.put(org_table_data)
         self.local_db.put(all_jobs)
         self.local_db.put(all_actions)
+        self.update_sync_cursor()
 
-    def download_base_tables(self):
+    def download_base_tables(self, base):
         pass
 
-    def download_user_tables(self):
+    def download_user_actions(self):
         """
-        We should have left the wizard just before, or logged in.
-        From here on, the reading is done by the actual user account.
+        Called at the end of the wizard. We are now identified.
         """
         my_actions = self.remote_db.get_contract_actions(self.current_job_contract)
         my_delegations = self.remote_db.get_delegations(self.current_job_contract)
@@ -179,8 +185,9 @@ class H3AlchemyCore:
     def wizard_user_details(self):
         """
         Update the current user's personal and career details in the live core and in the config file.
-        Used by the wizard (which will use the reader credentials on remote)
-        :return:
+        Used by the wizard (which will use the reader credentials on remote).
+        User can be already in the local DB, in remote, or brand new in remote.
+        User can have no job (wizard aborts) or be from another base (wizard will download that base's table).
         """
         if not self.options.has_section('H3 Options'):
             self.options.add_section('H3 Options')
@@ -296,6 +303,12 @@ class H3AlchemyCore:
     def base_full_name(self, base):
         return self.local_db.get_base_full_name(base)
 
+    def read_table(self, class_of_table, location):
+        if location == "local":
+            return self.local_db.read_table(class_of_table)
+        elif location == "remote":
+            return self.remote_db.read_table(class_of_table)
+
     def remote_create_user(self, login, password, first_name, last_name):
         """
         Builds the user object and sends it to the remote engine for app- and SQL-level setup.
@@ -309,7 +322,7 @@ class H3AlchemyCore:
                         last_name=last_name)
         self.remote_db.create_user(user)
 
-    def remote_create_base(self, base, parent, full):
+    def create_base(self, base):
         """
         Builds the user object and sends it to the remote engine for app- and SQL-level setup.
         :param base:
@@ -317,8 +330,34 @@ class H3AlchemyCore:
         :param full:
         :return:
         """
-        base = Acd.WorkBase(id=base, parent=parent, full_name=full)
-        self.remote_db.create_base(base)
+        sync_entry = Acd.SyncJournal(origin_base=self.current_job_contract.base,
+                                     origin_user=self.current_user.login,
+                                     type="CREATE",
+                                     table="bases",
+                                     key=base.code,
+                                     status="UNSUBMITTED",
+                                     local_timestamp=datetime.datetime.now())
+        self.local_db.put(base)
+        self.local_db.put(sync_entry)
+
+    def sync(self):
+        # TODO : extremely primitive
+        if self.options.read('config.txt'):
+            if self.options.has_option('H3 cursor', 'last_entry'):
+                first = self.options.get('H3 cursor', 'last_entry')
+                self.remote_db.get_public_updates(first)
+                self.remote_db.get_base_updates(first, self.current_job_contract.base)
+                self.remote_db.get_user_updates(first, self.current_user.login)
+
+        self.update_sync_cursor()
+
+    def update_sync_cursor(self):
+        last_entry = self.local_db.get_last_synced_entry()
+        if not self.options.has_section('H3 cursor'):
+            self.options.add_section('H3 cursor')
+        self.options.set('H3 cursor', 'last_entry', last_entry.auto_id)
+        self.options.set('H3 cursor', 'last_synced_on', datetime.datetime.now())
+        self.options.write(open('config.txt', 'w'))
 
     def get_visible_users(self):
         """
@@ -339,3 +378,6 @@ class H3AlchemyCore:
 
     def get_action_descriptions(self, id):
         return self.local_db.get_action_descriptions(id, self.language)
+
+    def get_user_count(self, base_code):
+        return self.remote_db.user_count(base_code)

@@ -11,6 +11,7 @@ import sqlalchemy.engine
 import sqlalchemy.engine.url
 
 from . import AlchemyClassDefs as Acd
+from .AlchemyTemporal import versioned_session
 
 SessionRemote = sqlalchemy.orm.sessionmaker()
 logger = logging.getLogger(__name__)
@@ -49,6 +50,7 @@ class H3AlchemyRemoteDB:
                                                                              port=5432,
                                                                              database='h3a'))
             SessionRemote.configure(bind=self.engine)
+            versioned_session(SessionRemote)
             self.engine.connect()
             return True
         except (sqlalchemy.exc.SQLAlchemyError, UnicodeError):
@@ -239,7 +241,8 @@ class H3AlchemyRemoteDB:
 
             return False
 
-    def get_user(self, username):
+    @staticmethod
+    def get_user(username):
         """
         Pull a specific user from the list.
         :param username:
@@ -262,7 +265,8 @@ class H3AlchemyRemoteDB:
                          .format(name=username))
             return False
 
-    def get_career(self, user):
+    @staticmethod
+    def get_career(user):
         """
         Get the list of jobs for a user.
         :param user: user object to find jobs
@@ -402,6 +406,11 @@ class H3AlchemyRemoteDB:
                                          scope='all',
                                          maximum=-1)
 
+        initial_sync_entry = Acd.SyncJournal(origin_base="root",
+                                             origin_user="root",
+                                             type="INIT",
+                                             status="INIT",
+                                             local_timestamp=datetime.datetime.now())
         try:
             cnx = self.engine.connect()
             cnx.execution_options(isolation_level="AUTOCOMMIT")
@@ -425,7 +434,7 @@ class H3AlchemyRemoteDB:
             query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM "f66ce97dfce5d8604edab9a721f3b85b";')
             query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
-            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, actions, job_contracts '
+            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, actions, job_contracts, sync_journal '
                                      'TO "f66ce97dfce5d8604edab9a721f3b85b";')
 
             logger.debug(_("Given users rights to FP group role"))
@@ -462,6 +471,7 @@ class H3AlchemyRemoteDB:
             session.add(root_c_a_4)
             # session.add(root_c_a_5)
             session.add(root_delegation)
+            session.add(initial_sync_entry)
 
             session.commit()
 
@@ -505,16 +515,26 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Failed to clean up default DB and roles"))
             print(_("DB Wipe failed, see log.txt for details"))
 
-    def read_table(self, class_of_table):
+    @staticmethod
+    def read_table(class_of_table):
         """
         Reads a whole table, returning a list of its objects (records)
         :param class_of_table:
         :return:
         """
-        session = SessionRemote()
-        return session.query(class_of_table).all()
+        try:
+            session = SessionRemote()
+            table = session.query(class_of_table).all()
+            logger.debug(_("Successfully read table {table} from remote")
+                         .format(table=class_of_table))
+            return table
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.error(_("Failed to read table {table} from remote")
+                         .format(table=class_of_table))
+            return False
 
-    def get_visible_users(self, bases_list):
+    @staticmethod
+    def get_visible_users(bases_list):
         """
         Get the users from a given list of bases, for display by H3.
         :param bases_list:
@@ -531,7 +551,8 @@ class H3AlchemyRemoteDB:
             .order_by(Acd.JobContract.base).all()
         return ret
 
-    def get_current_job_contract(self, user):
+    @staticmethod
+    def get_current_job_contract(user):
         """
         Finds the user's current job.
         :param user: A User object to get details from
@@ -558,7 +579,8 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Querying the remote DB for {user}'s current job failed")
                              .format(user=user.login))
 
-    def get_contract_actions(self, job_contract):
+    @staticmethod
+    def get_contract_actions(job_contract):
         """
         Finds the actions linked with a given contract.
         :return:
@@ -578,7 +600,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Querying the remote DB for actions failed"))
 
-    def get_delegations(self, job_contract):
+    @staticmethod
+    def get_delegations(job_contract):
         """
         Finds the actions delegated *to* a given contract.
         :return:
@@ -597,3 +620,64 @@ class H3AlchemyRemoteDB:
             return None
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Querying the remote DB for delegations failed"))
+
+    def user_count(self, base_code):
+        try:
+            session = SessionRemote()
+            return session.query(Acd.JobContract) \
+                .filter(Acd.JobContract.base == base_code) \
+                .count()
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Querying the remote DB for user count failed"))
+            return False
+
+    def post(self, sync_entry):
+        try:
+            session = SessionRemote()
+            session.add(sync_entry)
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to post the journal entry to remote !"))
+
+    def get_last_synced_entry(self):
+        try:
+            session = SessionRemote()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                .one()
+            return latest
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to identify the latest synced transaction in remote"))
+
+    def get_public_updates(self, first_update):
+        try:
+            session = SessionRemote()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id > first_update) \
+                .filter(Acd.SyncJournal.table.in_(["users", "bases", "jobs", "actions"])) \
+                .all()
+            return latest
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to download the public updates remote"))
+
+    def get_base_updates(self, first_update, base):
+        try:
+            session = SessionRemote()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id > first_update) \
+                .filter(Acd.SyncJournal.target_base == base.code) \
+                .all()
+            return latest
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to download the base updates from remote"))
+
+    def get_user_updates(self, first_update, user):
+        # TODO : any point to that ? Maybe look at contract instead, to get new actions ?
+        try:
+            session = SessionRemote()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id > first_update) \
+                .filter(Acd.SyncJournal.target_user == user.login) \
+                .all()
+            return latest
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to download the base updates from remote"))
