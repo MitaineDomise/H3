@@ -23,7 +23,6 @@ class H3AlchemyCore:
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(None)
         self.user_state = ""
 
-        self.current_user = Acd.User()
         self.current_job_contract = Acd.JobContract()
         self.base_visibility = []
 
@@ -94,8 +93,8 @@ class H3AlchemyCore:
                     self.local_db = AlchemyLocal.H3AlchemyLocalDB(temp_local_db_location)
                     if self.options.has_option('H3 Options', 'current user'):
                         username = self.options.get('H3 Options', 'current user')
-                        self.current_user = self.local_db.get_user(username)
-                        if self.current_user:
+                        self.current_job_contract = self.local_db.get_current_job_contract(username)
+                        if self.local_db.get_user(username):
                             return True
 
     def setup_databases(self, local, remote):
@@ -118,39 +117,37 @@ class H3AlchemyCore:
         Called from the wizard to find out the status of the "new user" credentials provided.
         :param username: the username to set up.
         """
-        self.current_user = None
-        self.current_user = self.local_db.get_user(username)
-        if self.current_user:
+        user = self.local_db.get_user(username)
+        if user:
             self.user_state = "local"
         else:
             self.remote_db.login('reader', 'weak')
-            self.current_user = self.remote_db.get_user(username)
-            if self.current_user:
+            user = self.remote_db.get_user(username)
+            if user:
                 if self.remote_db.login(username, username + 'YOUPIE'):
                     self.user_state = "new"
                 else:
                     self.user_state = "remote"
-        if self.current_user:
-            self.wizard_user_details()
+        if user:
+            self.wizard_user_details(username)
 
-    def download_current_user_job_contract(self):
+    def download_current_user_job_contract(self, username):
         """
         Called by wizard on finding a user which isn't in the local DB but IS in the remote.
         Downloads the user's personal and current job info.
         """
-        user = self.current_user
         self.remote_db.login('reader', 'weak')
-        contract = self.remote_db.get_current_job_contract(user)
+        contract = self.remote_db.get_current_job_contract(username)
         if contract:
-            self.local_db.put([user, ])
+            self.local_db.put([username, ])
             logger.debug(_("User {login} written into local DB")
-                         .format(login=user.login))
+                         .format(login=username))
             self.local_db.put([contract, ])
             logger.debug(_("User {login}'s current job contract '{contract}' written into local DB")
-                         .format(login=user.login, contract=contract.job_title + ", " + contract.base))
+                         .format(login=username, contract=contract.job_title + ", " + contract.base))
         else:
             logger.warning(_("User {login} doesn't have any jobs !")
-                           .format(login=user.login))
+                           .format(login=username))
 
     # Wizard initial data download (not sync)
 
@@ -182,7 +179,7 @@ class H3AlchemyCore:
         self.local_db.put(my_actions)
         self.local_db.put(my_delegations)
 
-    def wizard_user_details(self):
+    def wizard_user_details(self, username):
         """
         Update the current user's personal and career details in the live core and in the config file.
         Used by the wizard (which will use the reader credentials on remote).
@@ -192,13 +189,13 @@ class H3AlchemyCore:
         if not self.options.has_section('H3 Options'):
             self.options.add_section('H3 Options')
 
-        self.options.set('H3 Options', 'current user', self.current_user.login)
+        self.options.set('H3 Options', 'current user', username)
 
         if self.user_state == "local":
-            self.current_job_contract = self.local_db.get_current_job_contract(self.current_user)
+            self.current_job_contract = self.local_db.get_current_job_contract(username)
         elif self.user_state == "remote":
             self.remote_db.login('reader', 'weak')
-            self.current_job_contract = self.remote_db.get_current_job_contract(self.current_user)
+            self.current_job_contract = self.remote_db.get_current_job_contract(username)
         if self.current_job_contract:
             self.update_base_visibility(self.current_job_contract.base)
             self.options.set('H3 Options', 'Root Base', self.current_job_contract.base)
@@ -207,11 +204,11 @@ class H3AlchemyCore:
 
             if self.current_job_contract.base not in local_bases_list:
                 logger.info(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
-                            .format(name=self.current_user.login, base=self.current_job_contract.base))
+                            .format(name=username, base=self.current_job_contract.base))
                 self.user_state = "new_base"
         else:
             logger.info(_("User {name} doesn't currently have a contract")
-                        .format(name=self.current_user.login))
+                        .format(name=username))
             self.user_state = "no_job"
 
         self.options.write(open('config.txt', 'w'))
@@ -243,13 +240,9 @@ class H3AlchemyCore:
     def local_login(self, username, password):
         """
         Logs in at app-level, in the local DB.
-        then sets the core's current user.
-        :return: True if login succeeded, False if failed
         """
-        logged_user = self.local_db.login(username, password)
-        if logged_user:
-            self.current_user = logged_user
-            self.update_user_status()
+        if self.local_db.login(username, password):
+            self.update_user_status(username)
         else:
             self.user_state = "nok"
 
@@ -267,15 +260,15 @@ class H3AlchemyCore:
 
     # Application functions
 
-    def update_user_status(self):
+    def update_user_status(self, username):
         """
         Update the current user's personal and career status in the live core and in the config file.
         Used on local login.
         :return:
         """
-        self.options.set('H3 Options', 'current user', self.current_user.login)
+        self.options.set('H3 Options', 'current user', username)
 
-        self.current_job_contract = self.local_db.get_current_job_contract(self.current_user)
+        self.current_job_contract = self.local_db.get_current_job_contract(username)
 
         if self.current_job_contract:
             self.update_base_visibility(self.current_job_contract.base)
@@ -285,13 +278,13 @@ class H3AlchemyCore:
 
             if self.current_job_contract.base not in local_bases_list:
                 logger.info(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
-                            .format(name=self.current_user.login, base=self.current_job_contract.base))
+                            .format(name=username, base=self.current_job_contract.base))
                 self.user_state = "new_base"
             else:
                 self.user_state = "ok"
         else:
             logger.info(_("User {name} doesn't currently have a contract")
-                        .format(name=self.current_user.login))
+                        .format(name=username))
             self.user_state = "no_job"
 
         self.options.write(open('config.txt', 'w'))
@@ -300,8 +293,11 @@ class H3AlchemyCore:
         self.contract_actions = self.local_db.get_contract_actions(self.current_job_contract)
         self.delegations = self.local_db.get_current_delegations(self.current_job_contract)
 
-    def base_full_name(self, base):
-        return self.local_db.get_base_full_name(base)
+    def get_base(self, base_code):
+        return self.local_db.get_base(base_code)
+
+    def get_user(self, username):
+        return self.local_db.get_user(username)
 
     def read_table(self, class_of_table, location):
         if location == "local":
@@ -331,7 +327,7 @@ class H3AlchemyCore:
         :return:
         """
         sync_entry = Acd.SyncJournal(origin_base=self.current_job_contract.base,
-                                     origin_user=self.current_user.login,
+                                     origin_user=self.current_job_contract.user,
                                      type="CREATE",
                                      table="bases",
                                      key=base.code,
@@ -347,7 +343,7 @@ class H3AlchemyCore:
                 first = self.options.get('H3 cursor', 'last_entry')
                 self.remote_db.get_public_updates(first)
                 self.remote_db.get_base_updates(first, self.current_job_contract.base)
-                self.remote_db.get_user_updates(first, self.current_user.login)
+                self.remote_db.get_user_updates(first, self.current_job_contract.user)
 
         self.update_sync_cursor()
 

@@ -621,7 +621,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Querying the remote DB for delegations failed"))
 
-    def user_count(self, base_code):
+    @staticmethod
+    def user_count(base_code):
         try:
             session = SessionRemote()
             return session.query(Acd.JobContract) \
@@ -631,14 +632,16 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Querying the remote DB for user count failed"))
             return False
 
-    def post(self, sync_entry):
+    @staticmethod
+    def post(sync_entry):
         try:
             session = SessionRemote()
             session.add(sync_entry)
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to post the journal entry to remote !"))
 
-    def get_last_synced_entry(self):
+    @staticmethod
+    def get_last_synced_entry():
         try:
             session = SessionRemote()
             latest = session.query(Acd.SyncJournal) \
@@ -648,7 +651,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to identify the latest synced transaction in remote"))
 
-    def get_public_updates(self, first_update):
+    @staticmethod
+    def get_public_updates(first_update):
         try:
             session = SessionRemote()
             latest = session.query(Acd.SyncJournal) \
@@ -659,7 +663,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to download the public updates remote"))
 
-    def get_base_updates(self, first_update, base):
+    @staticmethod
+    def get_base_updates(first_update, base):
         try:
             session = SessionRemote()
             latest = session.query(Acd.SyncJournal) \
@@ -670,7 +675,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Failed to download the base updates from remote"))
 
-    def get_user_updates(self, first_update, user):
+    @staticmethod
+    def get_user_updates(first_update, user):
         # TODO : any point to that ? Maybe look at contract instead, to get new actions ?
         try:
             session = SessionRemote()

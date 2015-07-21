@@ -54,8 +54,8 @@ class SetupWizard:
             self.wizard.remoteAddress.setText(H3Core.remote_db.location)
             self.wizard.remote_ok = True
 
-        if H3Core.current_user:
-            self.wizard.usernameLineEdit.setText(H3Core.current_user.login)
+        if H3Core.current_job_contract:
+            self.wizard.usernameLineEdit.setText(H3Core.current_job_contract.login)
             self.wizard.user_ok = True
 
         self.wizard.browseButton.clicked.connect(self.browse)
@@ -260,8 +260,8 @@ class RecapWizardPage(QtGui.QWizardPage):
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
         self.wizard().nameRecap.setText(_("{first} {last}")
-                                        .format(first=H3Core.current_user.first_name,
-                                                last=H3Core.current_user.last_name))
+                                        .format(first=H3Core.get_user(H3Core.current_job_contract.user).first_name,
+                                                last=H3Core.get_user(H3Core.current_job_contract.user).last_name))
 
         if H3Core.user_state == "no_job":
             self.wizard().jobRecap.setText(_("No current contract"))
@@ -272,7 +272,7 @@ class RecapWizardPage(QtGui.QWizardPage):
             self.wizard().jobRecap.setText(H3Core.current_job_contract.job_code + " - "
                                            + H3Core.current_job_contract.job_title)
             self.wizard().baseRecap.setText(H3Core.current_job_contract.base + " - "
-                                            + H3Core.base_full_name(H3Core.current_job_contract.base))
+                                            + H3Core.get_base(H3Core.current_job_contract.base).full_name)
 
             if H3Core.user_state == "local":
                 self.wizard().userActionRecap.setText(_("The user profile was already set up in the local database."
@@ -293,7 +293,7 @@ class RecapWizardPage(QtGui.QWizardPage):
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
 
-            H3Core.download_current_user_job_contract()
+            H3Core.download_current_user_job_contract(self.wizard().usernameLineEdit.text())
 
 
 class LoginBox:
@@ -319,8 +319,8 @@ class LoginBox:
 
         self.login_attempts = 0
 
-        if H3Core.current_user:
-            self.login_box.loginLineEdit.setText(H3Core.current_user.login)
+        if H3Core.current_job_contract:
+            self.login_box.loginLineEdit.setText(H3Core.current_job_contract.user)
 
         self.login_box.pushButton.clicked.connect(self.login_clicked)
         self.login_box.new_user_pushButton.clicked.connect(self.gui.run_setup_wizard)
@@ -391,10 +391,10 @@ class H3MainGUI:
         self.current_screen = None
 
         self.root_window.setWindowTitle(_("{first} {last}, {job}, {base}")
-                                        .format(first=H3Core.current_user.first_name,
-                                                last=H3Core.current_user.last_name,
+                                        .format(first=H3Core.get_user(H3Core.current_job_contract.user).first_name,
+                                                last=H3Core.get_user(H3Core.current_job_contract.user).last_name,
                                                 job=H3Core.current_job_contract.job_title,
-                                                base=H3Core.base_full_name(H3Core.current_job_contract.base)))
+                                                base=H3Core.get_base(H3Core.current_job_contract.base).full_name))
 
         actions_model = self.build_actions_menu()
         self.root_window.treeView.setModel(actions_model)

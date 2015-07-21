@@ -48,10 +48,10 @@ class H3AlchemyLocalDB:
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
 
-    def login(self, username, password):
+    @staticmethod
+    def login(username, password):
         """
         App-level, local login.
-        If a user object matches credentials it's returned.
         :param username:
         :param password:
         :return:
@@ -65,13 +65,14 @@ class H3AlchemyLocalDB:
                           .one()
             logger.debug(_("Successfully logged in with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
-            return user
+            return True
         except sqlalchemy.exc.SQLAlchemyError:
             logger.debug(_("Impossible to login with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
             return False
 
-    def get_user(self, username):
+    @staticmethod
+    def get_user(username):
         """
         Pull a specific user from the list.
         :param username:
@@ -90,44 +91,53 @@ class H3AlchemyLocalDB:
                          .format(user=username))
             return False
 
-    def get_current_job_contract(self, user):
+    @staticmethod
+    def get_base(base_code):
+        """
+        Pull a specific user from the list.
+        :param username:
+        :return:
+        """
+        session = SessionLocal()
+        try:
+            base = session.query(Acd.WorkBase) \
+                .filter(Acd.WorkBase.code == base_code) \
+                .one()
+            logger.debug(_("User {user} found in local DB.")
+                         .format(user=base_code))
+            return base
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.debug(_("User {user} not found in local DB.")
+                         .format(user=base_code))
+            return False
+
+    @staticmethod
+    def get_current_job_contract(username):
         """
         Finds the user's current job.
-        :param user: A User object to get details from
+        :param username: A User object to get details from
         :return:
         """
         try:
             session = SessionLocal()
             current_job = session.query(Acd.JobContract) \
-                .filter(Acd.JobContract.user == user.login) \
+                .filter(Acd.JobContract.user == username) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
                 .one()
             logger.debug(_("Active job found in local for user {name} : {job} - {title}")
-                         .format(name=user.login, job=current_job.job_code, title=current_job.job_title))
+                         .format(name=username, job=current_job.job_code, title=current_job.job_title))
             return current_job
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No active jobs found in local for user {name}")
-                        .format(name=user.login))
+                        .format(name=username))
             return None
         except sqlalchemy.orm.exc.MultipleResultsFound:
             logger.error(_("Multiple active jobs found in local for user {name} !")
-                         .format(name=user.login))
+                         .format(name=username))
 
-    def get_base_full_name(self, base_code):
-        try:
-            session = SessionLocal()
-            base = session.query(Acd.WorkBase) \
-                .filter(Acd.WorkBase.code == base_code) \
-                .one()
-            logger.debug(_("Base {code} found in local table, with name {name}")
-                         .format(code=base_code, name=base.full_name))
-            return base.full_name
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.info(_("Error fetching full name of base {code}")
-                        .format(code=base_code))
-
-    def read_table(self, class_of_table):
+    @staticmethod
+    def read_table(class_of_table):
         """
         Reads a whole table, returning a list of its objects (records)
         :param class_of_table:
@@ -144,7 +154,8 @@ class H3AlchemyLocalDB:
                          .format(table=class_of_table))
             return False
 
-    def put(self, records):
+    @staticmethod
+    def put(records):
         """
         Merges (insert or updates) a record or records into the local db
         :param records:
@@ -223,7 +234,8 @@ class H3AlchemyLocalDB:
                            .format(location=self.location))
             return False
 
-    def get_contract_actions(self, job_contract):
+    @staticmethod
+    def get_contract_actions(job_contract):
         try:
             session = SessionLocal()
             actions = session.query(Acd.ContractAction) \
@@ -235,7 +247,8 @@ class H3AlchemyLocalDB:
                              .format(id=job_contract.auto_id))
             return False
 
-    def get_current_delegations(self, job_contract):
+    @staticmethod
+    def get_current_delegations(job_contract):
         try:
             session = SessionLocal()
             delegations = session.query(Acd.Delegation) \
@@ -249,7 +262,8 @@ class H3AlchemyLocalDB:
                              .format(id=job_contract.auto_id))
             return False
 
-    def get_action_descriptions(self, id, lang):
+    @staticmethod
+    def get_action_descriptions(id, lang):
         try:
             session = SessionLocal()
             description = session.query(Acd.Action) \
@@ -260,7 +274,8 @@ class H3AlchemyLocalDB:
             logger.exception(_("Error while trying to fetch {lang} description for Action {id}")
                              .format(lang=lang, id=id))
 
-    def get_last_synced_entry(self):
+    @staticmethod
+    def get_last_synced_entry():
         try:
             session = SessionLocal()
             latest = session.query(Acd.SyncJournal) \

@@ -107,34 +107,25 @@ class Delegation(Base):
 
 
 class SyncJournal(Base):
-    __tablename__ = 'sync_journal'
+    __tablename__ = 'journal_entries'
 
-    # Or get both inserts and updates ?
     auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
-    origin_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
-    target_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
-    origin_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
-    target_user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.login'))
+    origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+    target_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+
     type = sqlalchemy.Column(sqlalchemy.String)  # Create / Update / Delete
     table = sqlalchemy.Column(sqlalchemy.String)  # ie "bases"
-    key = sqlalchemy.Column(sqlalchemy.String)  # code of the sync entry
+    key = sqlalchemy.Column(sqlalchemy.String)  # PK of the sync entry
     status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified / Rejected
-    local_timestamp = sqlalchemy.Column(sqlalchemy.Date)
-    processed_timestamp = sqlalchemy.Column(sqlalchemy.Date)
 
-    origin_base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('journal'),
-                                                 foreign_keys=origin_base)
-    target_base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('journal'),
-                                                 foreign_keys=target_base)
-    origin_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'),
-                                                 foreign_keys=origin_user)
-    target_user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('journal'),
-                                                 foreign_keys=target_user)
+    local_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
+    processed_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
 
-
-# class SyncCursor(Base):  # Shouldn't the cursor be in a config file ?
-#     last_transaction_synced (from sync journal) in the config and that's it !
+    entry_origin_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('journal_entries_out'),
+                                                  foreign_keys=origin_jc)
+    entry_target_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('journal_entries_in'),
+                                                  foreign_keys=target_jc)
 
 
 class Message(Base):
@@ -142,12 +133,18 @@ class Message(Base):
 
     auto_id = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)
 
-    sender = sqlalchemy.Column(sqlalchemy.String)
-    addressee = sqlalchemy.Column(sqlalchemy.String)
-    sent = sqlalchemy.Column(sqlalchemy.Date)
-    received = sqlalchemy.Column(sqlalchemy.Date)
+    origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+    target_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.auto_id'))
+
+    sent = sqlalchemy.Column(sqlalchemy.DateTime)
+    received = sqlalchemy.Column(sqlalchemy.DateTime)
     transaction_ref = sqlalchemy.Column(sqlalchemy.String)
     body = sqlalchemy.Column(sqlalchemy.String)
+
+    message_origin_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('messages_out'),
+                                                    foreign_keys=origin_jc)
+    message_target_fk = sqlalchemy.orm.relationship('JobContract', backref=sqlalchemy.orm.backref('messages_in'),
+                                                    foreign_keys=target_jc)
 
     # Project - DonorBudgetLine - InternalBudgetLine - Activities - Donors
 
