@@ -48,15 +48,15 @@ class SetupWizard:
 
         if H3Core.local_db:
             self.wizard.localAddress.setText(H3Core.local_db.location)
-            self.wizard.local_ok = True
+            self.wizard.check_local()
 
         if H3Core.remote_db:
             self.wizard.remoteAddress.setText(H3Core.remote_db.location)
-            self.wizard.remote_ok = True
+            self.wizard.check_remote()
 
         if H3Core.current_job_contract:
-            self.wizard.usernameLineEdit.setText(H3Core.current_job_contract.login)
-            self.wizard.user_ok = True
+            self.wizard.usernameLineEdit.setText(H3Core.current_job_contract.user)
+            self.wizard.check_user()
 
         self.wizard.browseButton.clicked.connect(self.browse)
 
@@ -67,14 +67,14 @@ class SetupWizard:
         self.wizard.usernameLineEdit.textChanged.connect(self.invalidate_user)
         self.wizard.searchButton.clicked.connect(self.check_user)
 
-        self.wizard.accepted.connect(self.update_files)
+        self.wizard.accepted.connect(self.download_files)
 
         if (self.wizard.exec_() == QtGui.QDialog.Rejected
            and not H3Core.ready()):
             sys.exit()
 
-    def update_files(self):
-        # TODO: should have some kind of progress bar / animation
+    def download_files(self):
+        # TODO: should have some kind of progress bar / animation; use the sync functions.
         username = self.wizard.usernameLineEdit.text()
         password = self.wizard.passwordLineEdit.text()
         base = H3Core.current_job_contract.base
@@ -86,14 +86,12 @@ class SetupWizard:
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
         temp_user_ok = self.wizard.user_ok
-        str(temp_user_ok)  # completely useless. Just to get rid of a pycharm warning
         H3Core.find_user(username)
         if H3Core.user_state == "local":
             self.wizard.userStatusLabel.setText(_("User {login} already recorded locally, you can proceed !")
                                                 .format(login=username))
             temp_user_ok = True
             self.wizard.pw_ok = True
-            self.wizard.wizardPage3.completeChanged.emit()
         elif H3Core.user_state == "remote" or H3Core.user_state == "new_base":
             self.wizard.passwordLineEdit.show()
             self.wizard.passwordLabel.show()
@@ -245,6 +243,7 @@ class LoginWizardPage(QtGui.QWizardPage):
     def initializePage(self, *args, **kwargs):
         H3Core.setup_databases(self.wizard().localAddress.text(),
                                self.wizard().remoteAddress.text())
+        H3Core.download_public_tables()
         self.wizard().passwordLineEdit.hide()
         self.wizard().passwordLabel.hide()
         self.wizard().confirmPasswordLineEdit.hide()
@@ -256,12 +255,12 @@ class RecapWizardPage(QtGui.QWizardPage):
         super(RecapWizardPage, self).__init__(parent)
 
     def initializePage(self, *args, **kwargs):
+        H3Core.download_current_user_job_contract(self.wizard().usernameLineEdit.text())
+
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
-        self.wizard().nameRecap.setText(_("{first} {last}")
-                                        .format(first=H3Core.get_user(H3Core.current_job_contract.user).first_name,
-                                                last=H3Core.get_user(H3Core.current_job_contract.user).last_name))
+        self.wizard().nameRecap.setText(H3Core.current_job_contract.user)
 
         if H3Core.user_state == "no_job":
             self.wizard().jobRecap.setText(_("No current contract"))
@@ -292,8 +291,6 @@ class RecapWizardPage(QtGui.QWizardPage):
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
-
-            H3Core.download_current_user_job_contract(self.wizard().usernameLineEdit.text())
 
 
 class LoginBox:
@@ -338,18 +335,16 @@ class LoginBox:
                 self.gui.set_status(_("Successfully logged in as %(name)s") % {"name": username})
             elif H3Core.user_state == "new_base":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
-                                                _(
-                                                    "This user is currently affected to a base that is not present in"
-                                                    " the local database. Maybe the user got promoted to a new base, "
-                                                    "or this is H3 installation is old. Please run the setup wizard."),
+                                                _("This user is currently affected to a base that is not present in"
+                                                  " the local database. Maybe the user got promoted to a new base, "
+                                                  "or this is H3 installation is old. Please run the setup wizard."),
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
             elif H3Core.user_state == "no_job":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("No active job contract"),
-                                                _(
-                                                    "This user is currently not employed according to the local "
-                                                    "H3 database; Please contact your focal point if this is wrong."),
+                                                _("This user is currently not employed according to the local "
+                                                  "H3 database; Please contact your focal point if this is wrong."),
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
@@ -520,8 +515,8 @@ class ManageBases:
         self.menu.treeView.resizeColumnToContents(0)
         self.menu.treeView.resizeColumnToContents(1)
 
-        self.selection_model = self.menu.treeView.selectionModel()
-        self.selection_model.currentChanged.connect(self.update_stats)
+        self.base_selection_model = self.menu.treeView.selectionModel()
+        self.base_selection_model.currentChanged.connect(self.update_stats)
 
         self.menu.createButton.clicked.connect(self.create_base_box)
         # self.menu.editButton.clicked.connect(self.edit_box)
@@ -542,7 +537,7 @@ class ManageBases:
                 self.menu.userno.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base_box(self):
-        selected_base = self.selection_model.currentIndex().data(33)
+        selected_base = self.base_selection_model.currentIndex().data(33)
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
         base_data = H3Core.read_table(Acd.WorkBase, "local")

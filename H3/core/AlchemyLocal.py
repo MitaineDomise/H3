@@ -95,7 +95,6 @@ class H3AlchemyLocalDB:
     def get_base(base_code):
         """
         Pull a specific user from the list.
-        :param username:
         :return:
         """
         session = SessionLocal()
@@ -103,12 +102,12 @@ class H3AlchemyLocalDB:
             base = session.query(Acd.WorkBase) \
                 .filter(Acd.WorkBase.code == base_code) \
                 .one()
-            logger.debug(_("User {user} found in local DB.")
-                         .format(user=base_code))
+            logger.debug(_("Base {base} found in local DB.")
+                         .format(base=base_code))
             return base
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("User {user} not found in local DB.")
-                         .format(user=base_code))
+            logger.debug(_("Base {base} not found in local DB.")
+                         .format(base=base_code))
             return False
 
     @staticmethod
@@ -263,24 +262,33 @@ class H3AlchemyLocalDB:
             return False
 
     @staticmethod
-    def get_action_descriptions(id, lang):
+    def get_action_descriptions(action_id, lang):
         try:
             session = SessionLocal()
             description = session.query(Acd.Action) \
-                .filter(Acd.Action.code == id, Acd.Action.language == lang) \
+                .filter(Acd.Action.code == action_id, Acd.Action.language == lang) \
                 .one()
             return description
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Error while trying to fetch {lang} description for Action {id}")
-                             .format(lang=lang, id=id))
+            logger.exception(_("Error while trying to fetch {lang} description for Action {action_id}")
+                             .format(lang=lang, action_id=action_id))
 
     @staticmethod
-    def get_last_synced_entry():
+    def get_last_synced_entry(public=False):
         try:
             session = SessionLocal()
-            latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
-                .one()
+            if public:
+                latest = session.query(Acd.SyncJournal) \
+                    .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                    .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
+                    .one()
+            else:
+                latest = session.query(Acd.SyncJournal) \
+                    .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                    .one()
             return latest.auto_id
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.info(_("No sync entries in local, returning 1 to query all updates"))
+            return 1
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to identify the latest synced transaction in local"))
+            logger.exception((_("Error while getting the newest sync entry")))

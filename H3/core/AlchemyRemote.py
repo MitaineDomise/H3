@@ -242,6 +242,44 @@ class H3AlchemyRemoteDB:
             return False
 
     @staticmethod
+    def get_base(base_code):
+        """
+        Pull a specific user from the list.
+        :return:
+        """
+        session = SessionRemote()
+        try:
+            base = session.query(Acd.WorkBase) \
+                .filter(Acd.WorkBase.code == base_code) \
+                .one()
+            logger.debug(_("User {base} found in remote DB.")
+                         .format(base=base_code))
+            return base
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.debug(_("User {base} not found in remote DB.")
+                         .format(base=base_code))
+            return False
+
+    @staticmethod
+    def get_job_contract(jc_id):
+        """
+        Pull a specific user from the list.
+        :return:
+        """
+        session = SessionRemote()
+        try:
+            base = session.query(Acd.JobContract) \
+                .filter(Acd.JobContract.auto_id == jc_id) \
+                .one()
+            logger.debug(_("Job contract {code} found in remote DB.")
+                         .format(code=jc_id))
+            return base
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.debug(_("Job contract {code} not found in remote DB.")
+                         .format(code=jc_id))
+            return False
+
+    @staticmethod
     def get_user(username):
         """
         Pull a specific user from the list.
@@ -266,6 +304,7 @@ class H3AlchemyRemoteDB:
             return False
 
     @staticmethod
+    # TODO : actually use this
     def get_career(user):
         """
         Get the list of jobs for a user.
@@ -406,8 +445,8 @@ class H3AlchemyRemoteDB:
                                          scope='all',
                                          maximum=-1)
 
-        initial_sync_entry = Acd.SyncJournal(origin_base="root",
-                                             origin_user="root",
+        initial_sync_entry = Acd.SyncJournal(origin_base=1,
+                                             origin_user=1,
                                              type="INIT",
                                              status="INIT",
                                              local_timestamp=datetime.datetime.now())
@@ -434,7 +473,7 @@ class H3AlchemyRemoteDB:
             query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM "f66ce97dfce5d8604edab9a721f3b85b";')
             query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
-            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, actions, job_contracts, sync_journal '
+            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, job_contracts '
                                      'TO "f66ce97dfce5d8604edab9a721f3b85b";')
 
             logger.debug(_("Given users rights to FP group role"))
@@ -641,7 +680,7 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Failed to post the journal entry to remote !"))
 
     @staticmethod
-    def get_last_synced_entry():
+    def get_last_sync_entry():
         try:
             session = SessionRemote()
             latest = session.query(Acd.SyncJournal) \
@@ -655,35 +694,38 @@ class H3AlchemyRemoteDB:
     def get_public_updates(first_update):
         try:
             session = SessionRemote()
-            latest = session.query(Acd.SyncJournal) \
+            public_cursor = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
+                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                .one()
+            public_latest = session.query(Acd.SyncJournal) \
                 .filter(Acd.SyncJournal.auto_id > first_update) \
-                .filter(Acd.SyncJournal.table.in_(["users", "bases", "jobs", "actions"])) \
+                .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
                 .all()
-            return latest
+            return public_cursor, public_latest
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download the public updates remote"))
+            logger.exception(_("Failed to download the public updates from remote"))
 
     @staticmethod
-    def get_base_updates(first_update, base):
+    def get_specific_updates(first_update, job_contract):
         try:
+            # TODO : check this actually works !
             session = SessionRemote()
-            latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id > first_update) \
-                .filter(Acd.SyncJournal.target_base == base.code) \
-                .all()
-            return latest
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download the base updates from remote"))
 
-    @staticmethod
-    def get_user_updates(first_update, user):
-        # TODO : any point to that ? Maybe look at contract instead, to get new actions ?
-        try:
-            session = SessionRemote()
+            jc_alias_1 = sqlalchemy.orm.aliased(Acd.JobContract)
+            jc_alias_2 = sqlalchemy.orm.aliased(Acd.JobContract)
+            jc_alias_3 = sqlalchemy.orm.aliased(Acd.JobContract)
+
             latest = session.query(Acd.SyncJournal) \
                 .filter(Acd.SyncJournal.auto_id > first_update) \
-                .filter(Acd.SyncJournal.target_user == user.login) \
+                .filter(Acd.SyncJournal.target_jc.in_(jc_alias_1.auto_id,
+                                                      jc_alias_2.auto_id,
+                                                      jc_alias_3.auto_id, )) \
+                .filter(jc_alias_1.user == job_contract.user) \
+                .filter(jc_alias_2.base == job_contract.base) \
+                .filter(jc_alias_3.job_code == job_contract.job_code) \
+                .order_by(Acd.SyncJournal.auto_id) \
                 .all()
             return latest
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download the base updates from remote"))
+            logger.exception(_("Failed to download the relevant updates from remote"))

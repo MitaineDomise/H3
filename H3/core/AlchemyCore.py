@@ -105,7 +105,6 @@ class H3AlchemyCore:
         self.local_db = AlchemyLocal.H3AlchemyLocalDB(local)
         self.local_db.init_public_tables()
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(remote)
-        self.download_public_tables()
         if not self.options.has_section('DB Locations'):
             self.options.add_section('DB Locations')
         self.options.set('DB Locations', 'local', local)
@@ -125,6 +124,7 @@ class H3AlchemyCore:
             user = self.remote_db.get_user(username)
             if user:
                 if self.remote_db.login(username, username + 'YOUPIE'):
+                    # TODO : Find a better way than this to make a new user's pw
                     self.user_state = "new"
                 else:
                     self.user_state = "remote"
@@ -156,18 +156,15 @@ class H3AlchemyCore:
         First useful table as clients need to know the worldwide structure as well as existing jobs and actions.
         Uses reader credentials from wizard.
         """
-        self.remote_db.login('reader', 'weak')
-        last_entry = self.remote_db.get_last_synced_entry()
         org_table_data = self.remote_db.read_table(Acd.WorkBase)
         all_jobs = self.remote_db.read_table(Acd.Job)
         all_actions = self.remote_db.read_table(Acd.Action)
-        self.local_db.put(last_entry)
         self.local_db.put(org_table_data)
         self.local_db.put(all_jobs)
         self.local_db.put(all_actions)
-        self.update_sync_cursor()
 
     def download_base_tables(self, base):
+        # TODO: sync
         pass
 
     def download_user_actions(self):
@@ -267,15 +264,12 @@ class H3AlchemyCore:
         :return:
         """
         self.options.set('H3 Options', 'current user', username)
-
         self.current_job_contract = self.local_db.get_current_job_contract(username)
 
         if self.current_job_contract:
-            self.update_base_visibility(self.current_job_contract.base)
             self.options.set('H3 Options', 'Root Base', self.current_job_contract.base)
-
+            self.update_base_visibility(self.current_job_contract.base)
             local_bases_list = self.local_db.get_local_bases()
-
             if self.current_job_contract.base not in local_bases_list:
                 logger.info(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
                             .format(name=username, base=self.current_job_contract.base))
@@ -322,8 +316,6 @@ class H3AlchemyCore:
         """
         Builds the user object and sends it to the remote engine for app- and SQL-level setup.
         :param base:
-        :param parent:
-        :param full:
         :return:
         """
         sync_entry = Acd.SyncJournal(origin_base=self.current_job_contract.base,
@@ -336,24 +328,43 @@ class H3AlchemyCore:
         self.local_db.put(base)
         self.local_db.put(sync_entry)
 
-    def sync(self):
-        # TODO : extremely primitive
-        if self.options.read('config.txt'):
-            if self.options.has_option('H3 cursor', 'last_entry'):
-                first = self.options.get('H3 cursor', 'last_entry')
-                self.remote_db.get_public_updates(first)
-                self.remote_db.get_base_updates(first, self.current_job_contract.base)
-                self.remote_db.get_user_updates(first, self.current_job_contract.user)
+    def sync_public_tables(self):
+        """
+        Syncing base, job and action data at login and at set intervals.
+        :return:
+        """
+        current_public_cursor = self.local_db.get_last_synced_entry(public=True)
+        updates = self.remote_db.get_public_updates(current_public_cursor)
+        self.process_updates(updates)
 
-        self.update_sync_cursor()
+    def sync_specific_tables(self):
+        current_local_cursor = self.local_db.get_last_synced_entry(public=False)
+        updates = self.remote_db.get_specific_updates(current_local_cursor, self.current_job_contract)
+        self.process_updates(updates)
 
-    def update_sync_cursor(self):
-        last_entry = self.local_db.get_last_synced_entry()
-        if not self.options.has_section('H3 cursor'):
-            self.options.add_section('H3 cursor')
-        self.options.set('H3 cursor', 'last_entry', last_entry.auto_id)
-        self.options.set('H3 cursor', 'last_synced_on', datetime.datetime.now())
-        self.options.write(open('config.txt', 'w'))
+    def process_updates(self, updates):
+        for update in updates:
+            class_to_update = self.get_class_by_table_name(update.table)
+            target_job_contract = self.remote_db.get_job_contract(update.target_jc)
+            if update.type == "create":
+                pass
+            elif update.type == "update":
+                pass
+            elif update.type == "delete":
+                pass
+
+    @staticmethod
+    def get_class_by_table_name(tablename):
+        for c in Acd.Base._decl_class_registry.values():
+            if hasattr(c, '__tablename__') and c.__tablename__ == tablename:
+                return c
+
+    # def update_sync_cursor(self, cursor_id):
+    #     if not self.options.has_section('H3 cursor'):
+    #         self.options.add_section('H3 cursor')
+    #     self.options.set('H3 cursor', 'last_entry', cursor_id)
+    #     self.options.set('H3 cursor', 'last_synced_timestamp', datetime.datetime.now())
+    #     self.options.write(open('config.txt', 'w'))
 
     def get_visible_users(self):
         """
