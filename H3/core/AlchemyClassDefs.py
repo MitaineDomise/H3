@@ -21,7 +21,10 @@ class WorkBase(Base, Versioned):
     country = sqlalchemy.Column(sqlalchemy.String(2))  # 2-char country code, ISO-3166
     time_zone = sqlalchemy.Column(sqlalchemy.String)
 
-    parent_self_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('bases', remote_side=code))
+    parent_self_fk = sqlalchemy.orm.relationship('WorkBase',
+                                                 backref=sqlalchemy.orm.backref('bases', remote_side=code),
+                                                 cascade="all, delete-orphan",
+                                                 passive_updates=False)
 
 
 class User(Base, Versioned):
@@ -49,11 +52,15 @@ class JobContract(Base):
     base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
 
     base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('job_contracts'),
-                                          foreign_keys=base)
+                                          foreign_keys=base,
+                                          cascade="all, delete-orphan",
+                                          passive_updates=False)
     user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('job_contracts'),
                                           foreign_keys=user)
     job_fk = sqlalchemy.orm.relationship('Job', backref=sqlalchemy.orm.backref('job_contracts'),
-                                         foreign_keys=job_code)
+                                         foreign_keys=job_code,
+                                         cascade="all, delete-orphan",
+                                         passive_updates=False)
 
 
 class Action(Base):

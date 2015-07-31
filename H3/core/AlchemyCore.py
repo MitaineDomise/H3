@@ -121,7 +121,7 @@ class H3AlchemyCore:
             self.user_state = "local"
         else:
             self.remote_db.login('reader', 'weak')
-            user = self.remote_db.get_user(username)
+            user = self.remote_db.get_from_primary_key(Acd.User, username)
             if user:
                 if self.remote_db.login(username, username + 'YOUPIE'):
                     # TODO : Find a better way than this to make a new user's pw
@@ -131,50 +131,12 @@ class H3AlchemyCore:
         if user:
             self.wizard_user_details(username)
 
-    def download_current_user_job_contract(self, username):
+    def get_current_user_job_contract(self, username):
         """
         Called by wizard on finding a user which isn't in the local DB but IS in the remote.
-        Downloads the user's personal and current job info.
         """
         self.remote_db.login('reader', 'weak')
-        contract = self.remote_db.get_current_job_contract(username)
-        if contract:
-            self.local_db.put([username, ])
-            logger.debug(_("User {login} written into local DB")
-                         .format(login=username))
-            self.local_db.put([contract, ])
-            logger.debug(_("User {login}'s current job contract '{contract}' written into local DB")
-                         .format(login=username, contract=contract.job_title + ", " + contract.base))
-        else:
-            logger.warning(_("User {login} doesn't have any jobs !")
-                           .format(login=username))
-
-    # Wizard initial data download (not sync)
-
-    def download_public_tables(self):
-        """
-        First useful table as clients need to know the worldwide structure as well as existing jobs and actions.
-        Uses reader credentials from wizard.
-        """
-        org_table_data = self.remote_db.read_table(Acd.WorkBase)
-        all_jobs = self.remote_db.read_table(Acd.Job)
-        all_actions = self.remote_db.read_table(Acd.Action)
-        self.local_db.put(org_table_data)
-        self.local_db.put(all_jobs)
-        self.local_db.put(all_actions)
-
-    def download_base_tables(self, base):
-        # TODO: sync
-        pass
-
-    def download_user_actions(self):
-        """
-        Called at the end of the wizard. We are now identified.
-        """
-        my_actions = self.remote_db.get_contract_actions(self.current_job_contract)
-        my_delegations = self.remote_db.get_delegations(self.current_job_contract)
-        self.local_db.put(my_actions)
-        self.local_db.put(my_delegations)
+        self.current_job_contract = self.remote_db.get_current_job_contract(username)
 
     def wizard_user_details(self, username):
         """
@@ -318,8 +280,8 @@ class H3AlchemyCore:
         :param base:
         :return:
         """
-        sync_entry = Acd.SyncJournal(origin_base=self.current_job_contract.base,
-                                     origin_user=self.current_job_contract.user,
+        sync_entry = Acd.SyncJournal(origin_jc=self.current_job_contract,
+                                     target_jc=self.current_job_contract,
                                      type="CREATE",
                                      table="bases",
                                      key=base.code,
@@ -328,43 +290,36 @@ class H3AlchemyCore:
         self.local_db.put(base)
         self.local_db.put(sync_entry)
 
-    def sync_public_tables(self):
+    def sync_up(self):
         """
-        Syncing base, job and action data at login and at set intervals.
+
         :return:
         """
-        current_public_cursor = self.local_db.get_last_synced_entry(public=True)
-        updates = self.remote_db.get_public_updates(current_public_cursor)
-        self.process_updates(updates)
 
-    def sync_specific_tables(self):
-        current_local_cursor = self.local_db.get_last_synced_entry(public=False)
-        updates = self.remote_db.get_specific_updates(current_local_cursor, self.current_job_contract)
+    def sync_down(self):
+        """
+        Syncing the latest data from remote as available / at set intervals.
+        :return:
+        """
+        current_cursor = self.local_db.get_last_synced_entry()
+        updates = self.remote_db.get_updates(current_cursor, self.current_job_contract)
         self.process_updates(updates)
 
     def process_updates(self, updates):
+        hundred_percent = len(updates)  # Preparing for progress bar...
         for update in updates:
             class_to_update = self.get_class_by_table_name(update.table)
-            target_job_contract = self.remote_db.get_job_contract(update.target_jc)
-            if update.type == "create":
-                pass
-            elif update.type == "update":
-                pass
+            record = self.remote_db.get_from_primary_key(class_to_update, update.key)
+            if update.type == "create" or update.type == "update":
+                self.local_db.put([record, ])
             elif update.type == "delete":
-                pass
+                self.local_db.delete([record, ])
 
     @staticmethod
     def get_class_by_table_name(tablename):
         for c in Acd.Base._decl_class_registry.values():
             if hasattr(c, '__tablename__') and c.__tablename__ == tablename:
                 return c
-
-    # def update_sync_cursor(self, cursor_id):
-    #     if not self.options.has_section('H3 cursor'):
-    #         self.options.add_section('H3 cursor')
-    #     self.options.set('H3 cursor', 'last_entry', cursor_id)
-    #     self.options.set('H3 cursor', 'last_synced_timestamp', datetime.datetime.now())
-    #     self.options.write(open('config.txt', 'w'))
 
     def get_visible_users(self):
         """

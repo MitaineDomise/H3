@@ -242,68 +242,6 @@ class H3AlchemyRemoteDB:
             return False
 
     @staticmethod
-    def get_base(base_code):
-        """
-        Pull a specific user from the list.
-        :return:
-        """
-        session = SessionRemote()
-        try:
-            base = session.query(Acd.WorkBase) \
-                .filter(Acd.WorkBase.code == base_code) \
-                .one()
-            logger.debug(_("User {base} found in remote DB.")
-                         .format(base=base_code))
-            return base
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("User {base} not found in remote DB.")
-                         .format(base=base_code))
-            return False
-
-    @staticmethod
-    def get_job_contract(jc_id):
-        """
-        Pull a specific user from the list.
-        :return:
-        """
-        session = SessionRemote()
-        try:
-            base = session.query(Acd.JobContract) \
-                .filter(Acd.JobContract.auto_id == jc_id) \
-                .one()
-            logger.debug(_("Job contract {code} found in remote DB.")
-                         .format(code=jc_id))
-            return base
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("Job contract {code} not found in remote DB.")
-                         .format(code=jc_id))
-            return False
-
-    @staticmethod
-    def get_user(username):
-        """
-        Pull a specific user from the list.
-        :param username:
-        :return:
-        """
-        session = SessionRemote()
-        try:
-            user = session.query(Acd.User) \
-                          .filter(Acd.User.login == username) \
-                          .one()
-            logger.debug(_("User {name} found in remote DB.")
-                         .format(name=username))
-            return user
-        except sqlalchemy.orm.exc.NoResultFound:
-            logger.debug(_("User {name} not found in remote DB.")
-                         .format(name=username))
-            return False
-        except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple results for username {name} found in remote DB.")
-                         .format(name=username))
-            return False
-
-    @staticmethod
     # TODO : actually use this
     def get_career(user):
         """
@@ -591,74 +529,32 @@ class H3AlchemyRemoteDB:
         return ret
 
     @staticmethod
-    def get_current_job_contract(user):
+    def get_current_job_contract(username):
         """
         Finds the user's current job.
-        :param user: A User object to get details from
+        :param user: A User name string to get details from
         :return:
         """
         try:
             session = SessionRemote()
             current_job = session.query(Acd.JobContract) \
-                .filter(Acd.JobContract.user == user.login) \
+                .filter(Acd.JobContract.user == username) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
                 .one()
             logger.debug(_("Active job found in remote for user {name} : {job} - {title}")
-                         .format(name=user.login, job=current_job.job_code, title=current_job.job_title))
+                         .format(name=username, job=current_job.job_code, title=current_job.job_title))
             return current_job
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No active jobs found in remote for user {name}")
-                        .format(name=user.login))
+                        .format(name=username))
             return None
         except sqlalchemy.orm.exc.MultipleResultsFound:
             logger.error(_("Multiple active jobs found in remote for user {name} !")
-                         .format(name=user.login))
+                         .format(name=username))
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Querying the remote DB for {user}'s current job failed")
-                             .format(user=user.login))
-
-    @staticmethod
-    def get_contract_actions(job_contract):
-        """
-        Finds the actions linked with a given contract.
-        :return:
-        """
-        try:
-            session = SessionRemote()
-            actions_list = session.query(Acd.ContractAction) \
-                .filter(Acd.ContractAction.contract == job_contract.auto_id) \
-                .all()
-            logger.debug(_("Actions in remote for contract {job}, {base} : {list}")
-                         .format(job=job_contract.job_title, base=job_contract.base, list=actions_list))
-            return actions_list
-        except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No actions found in remote for contract {job}, {base}")
-                        .format(job=job_contract.job_title, base=job_contract.base))
-            return None
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Querying the remote DB for actions failed"))
-
-    @staticmethod
-    def get_delegations(job_contract):
-        """
-        Finds the actions delegated *to* a given contract.
-        :return:
-        """
-        try:
-            session = SessionRemote()
-            delegations_list = session.query(Acd.Delegation) \
-                .filter(Acd.Delegation.delegated_to == job_contract.auto_id) \
-                .all()
-            logger.debug(_("Delegations in remote to contract {job}, {base} : {list}")
-                         .format(job=job_contract.job_title, base=job_contract.base, list=delegations_list))
-            return delegations_list
-        except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No delegations found in remote for contract {job}, {base}")
-                        .format(job=job_contract.job_title, base=job_contract.base))
-            return None
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Querying the remote DB for delegations failed"))
+                             .format(user=username))
 
     @staticmethod
     def user_count(base_code):
@@ -680,52 +576,32 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Failed to post the journal entry to remote !"))
 
     @staticmethod
-    def get_last_sync_entry():
+    def get_updates(first_update, job_contract):
         try:
             session = SessionRemote()
-            latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
-                .one()
-            return latest
+
+            updates = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.auto_id > first_update) \
+                .options(sqlalchemy.orm.joinedload(Acd.SyncJournal.entry_target_fk)) \
+                .filter(sqlalchemy.or_(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"]),
+                                       Acd.SyncJournal.target_jc == job_contract.auto_id,
+                                       Acd.SyncJournal.entry_target_fk.base == job_contract.base,
+                                       Acd.SyncJournal.entry_target_fk.job_code == job_contract.job_code,
+                                       Acd.SyncJournal.entry_target_fk.user == job_contract.user)) \
+                .all()
+            return updates
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to identify the latest synced transaction in remote"))
+            logger.exception(_("Failed to download updates from remote"))
 
     @staticmethod
-    def get_public_updates(first_update):
+    def get_from_primary_key(class_to_query, p_key):
+        mapper = sqlalchemy.inspect(class_to_query)
+        assert len(mapper.primary_key) == 1
+        primary = mapper.primary_key[0]
+        session = SessionRemote()
         try:
-            session = SessionRemote()
-            public_cursor = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
-                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
-                .one()
-            public_latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id > first_update) \
-                .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
-                .all()
-            return public_cursor, public_latest
+            record = session.query(class_to_query).filter(primary == p_key).one()
+            return record
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download the public updates from remote"))
-
-    @staticmethod
-    def get_specific_updates(first_update, job_contract):
-        try:
-            # TODO : check this actually works !
-            session = SessionRemote()
-
-            jc_alias_1 = sqlalchemy.orm.aliased(Acd.JobContract)
-            jc_alias_2 = sqlalchemy.orm.aliased(Acd.JobContract)
-            jc_alias_3 = sqlalchemy.orm.aliased(Acd.JobContract)
-
-            latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id > first_update) \
-                .filter(Acd.SyncJournal.target_jc.in_(jc_alias_1.auto_id,
-                                                      jc_alias_2.auto_id,
-                                                      jc_alias_3.auto_id, )) \
-                .filter(jc_alias_1.user == job_contract.user) \
-                .filter(jc_alias_2.base == job_contract.base) \
-                .filter(jc_alias_3.job_code == job_contract.job_code) \
-                .order_by(Acd.SyncJournal.auto_id) \
-                .all()
-            return latest
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download the relevant updates from remote"))
+            logger.error(_("Failed to get object of type {cls} with primary key {key}")
+                         .format(cls=class_to_query, key=p_key))

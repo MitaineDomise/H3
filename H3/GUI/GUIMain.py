@@ -67,21 +67,11 @@ class SetupWizard:
         self.wizard.usernameLineEdit.textChanged.connect(self.invalidate_user)
         self.wizard.searchButton.clicked.connect(self.check_user)
 
-        self.wizard.accepted.connect(self.download_files)
-
+        self.wizard.accepted.connect(H3Core.sync_down)
+        # TODO: should have some kind of progress bar / animation
         if (self.wizard.exec_() == QtGui.QDialog.Rejected
            and not H3Core.ready()):
             sys.exit()
-
-    def download_files(self):
-        # TODO: should have some kind of progress bar / animation; use the sync functions.
-        username = self.wizard.usernameLineEdit.text()
-        password = self.wizard.passwordLineEdit.text()
-        base = H3Core.current_job_contract.base
-        H3Core.remote_login(username, password)
-        H3Core.download_user_actions()
-        if H3Core.user_state == "new_base":
-            H3Core.download_base_tables(base)
 
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
@@ -243,7 +233,6 @@ class LoginWizardPage(QtGui.QWizardPage):
     def initializePage(self, *args, **kwargs):
         H3Core.setup_databases(self.wizard().localAddress.text(),
                                self.wizard().remoteAddress.text())
-        H3Core.download_public_tables()
         self.wizard().passwordLineEdit.hide()
         self.wizard().passwordLabel.hide()
         self.wizard().confirmPasswordLineEdit.hide()
@@ -255,7 +244,7 @@ class RecapWizardPage(QtGui.QWizardPage):
         super(RecapWizardPage, self).__init__(parent)
 
     def initializePage(self, *args, **kwargs):
-        H3Core.download_current_user_job_contract(self.wizard().usernameLineEdit.text())
+        H3Core.get_current_user_job_contract(self.wizard().usernameLineEdit.text())
 
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())

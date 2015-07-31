@@ -94,7 +94,7 @@ class H3AlchemyLocalDB:
     @staticmethod
     def get_base(base_code):
         """
-        Pull a specific user from the list.
+        Pull a specific base from the local DB.
         :return:
         """
         session = SessionLocal()
@@ -162,8 +162,8 @@ class H3AlchemyLocalDB:
         """
         try:
             session = SessionLocal()
-            for row in records:
-                session.merge(row)
+            for record in records:
+                session.merge(record)
             session.commit()
             logger.debug(ngettext("Successfully inserted record {records}",
                                   "Successfully inserted records in {records}",
@@ -174,6 +174,31 @@ class H3AlchemyLocalDB:
             print(exc)
             logger.error(ngettext("Failed to insert record {records}",
                                   "Failed to insert records in {records}",
+                                  len(records))
+                         .format(records=records))
+            return False
+
+    @staticmethod
+    def delete(records):
+        """
+        deletes a record or records from the local db
+        :param records:
+        :return:
+        """
+        try:
+            session = SessionLocal()
+            for record in records:
+                session.delete(record)
+            session.commit()
+            logger.debug(ngettext("Successfully deleted record {records}",
+                                  "Successfully deleted records in {records}",
+                                  len(records))
+                         .format(records=records))
+            return True
+        except sqlalchemy.exc.SQLAlchemyError as exc:
+            print(exc)
+            logger.error(ngettext("Failed to delete record {records}",
+                                  "Failed to delete records in {records}",
                                   len(records))
                          .format(records=records))
             return False
@@ -274,18 +299,13 @@ class H3AlchemyLocalDB:
                              .format(lang=lang, action_id=action_id))
 
     @staticmethod
-    def get_last_synced_entry(public=False):
+    def get_last_synced_entry():
         try:
             session = SessionLocal()
-            if public:
-                latest = session.query(Acd.SyncJournal) \
-                    .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
-                    .filter(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"])) \
-                    .one()
-            else:
-                latest = session.query(Acd.SyncJournal) \
-                    .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
-                    .one()
+            latest = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.status.notlike("UNSUBMITTED")) \
+                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                .one()
             return latest.auto_id
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No sync entries in local, returning 1 to query all updates"))
