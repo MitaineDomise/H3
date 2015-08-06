@@ -51,7 +51,7 @@ class H3AlchemyLocalDB:
     @staticmethod
     def login(username, password):
         """
-        App-level, local login.
+        App-level login.
         :param username:
         :param password:
         :return:
@@ -60,9 +60,9 @@ class H3AlchemyLocalDB:
         hashed_pass = hashlib.md5((password + username).encode(encoding='ascii')).hexdigest()
         try:
             user = session.query(Acd.User) \
-                          .filter(Acd.User.login == username,
-                                  Acd.User.pw_hash == hashed_pass) \
-                          .one()
+                .filter(Acd.User.login == username,
+                        Acd.User.pw_hash == hashed_pass) \
+                .one()
             logger.debug(_("Successfully logged in with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
             return True
@@ -70,45 +70,23 @@ class H3AlchemyLocalDB:
             logger.debug(_("Impossible to login with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
             return False
+        finally:
+            session.close()
 
     @staticmethod
-    def get_user(username):
-        """
-        Pull a specific user from the list.
-        :param username:
-        :return:
-        """
+    def get_from_primary_key(mapped_class, p_key):
+        mapper = sqlalchemy.inspect(mapped_class)
+        assert len(mapper.primary_key) == 1
+        primary = mapper.primary_key[0]
         session = SessionLocal()
         try:
-            user = session.query(Acd.User) \
-                          .filter(Acd.User.login == username) \
-                          .one()
-            logger.debug(_("User {user} found in local DB.")
-                         .format(user=username))
-            return user
+            record = session.query(mapped_class).filter(primary == p_key).one()
+            return record
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("User {user} not found in local DB.")
-                         .format(user=username))
-            return False
-
-    @staticmethod
-    def get_base(base_code):
-        """
-        Pull a specific base from the local DB.
-        :return:
-        """
-        session = SessionLocal()
-        try:
-            base = session.query(Acd.WorkBase) \
-                .filter(Acd.WorkBase.code == base_code) \
-                .one()
-            logger.debug(_("Base {base} found in local DB.")
-                         .format(base=base_code))
-            return base
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("Base {base} not found in local DB.")
-                         .format(base=base_code))
-            return False
+            logger.error(_("Failed to get object of type {cls} with primary key {key}")
+                         .format(cls=mapped_class, key=p_key))
+        finally:
+            session.close()
 
     @staticmethod
     def get_current_job_contract(username):
@@ -117,23 +95,25 @@ class H3AlchemyLocalDB:
         :param username: A User object to get details from
         :return:
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             current_job = session.query(Acd.JobContract) \
                 .filter(Acd.JobContract.user == username) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
                 .one()
-            logger.debug(_("Active job found in local for user {name} : {job} - {title}")
+            logger.debug(_("Active joor user {name} : {job} - {title}")
                          .format(name=username, job=current_job.job_code, title=current_job.job_title))
             return current_job
         except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No active jobs found in local for user {name}")
+            logger.info(_("No active jobor user {name}")
                         .format(name=username))
             return None
         except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple active jobs found in local for user {name} !")
+            logger.error(_("Multiple active jobs found for user {name} !")
                          .format(name=username))
+        finally:
+            session.close()
 
     @staticmethod
     def read_table(class_of_table):
@@ -142,79 +122,98 @@ class H3AlchemyLocalDB:
         :param class_of_table:
         :return:
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             table = session.query(class_of_table).all()
-            logger.debug(_("Successfully read table {table} from local")
+            logger.debug(_("Successfully read table {table}")
                          .format(table=class_of_table))
             return table
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.error(_("Failed to read table {table} from local")
+            logger.error(_("Failed to read table {table}")
                          .format(table=class_of_table))
             return False
+        finally:
+            session.close()
 
     @staticmethod
-    def put(records):
+    def add(record):
         """
-        Merges (insert or updates) a record or records into the local db
-        :param records:
+        Adds (inserts) a record into the db.
+        Should be used for new records.
+        :param record:
         :return:
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
-            for record in records:
-                session.merge(record)
+            session.add(record)
             session.commit()
-            logger.debug(ngettext("Successfully inserted record {records}",
-                                  "Successfully inserted records in {records}",
-                                  len(records))
-                         .format(records=records))
+            logger.debug(_("Successfully inserted record {record}")
+                         .format(record=record))
             return True
-        except sqlalchemy.exc.SQLAlchemyError as exc:
-            print(exc)
-            logger.error(ngettext("Failed to insert record {records}",
-                                  "Failed to insert records in {records}",
-                                  len(records))
-                         .format(records=records))
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to insert record {record}")
+                             .format(record=record))
             return False
+        finally:
+            session.close()
 
     @staticmethod
-    def delete(records):
+    def merge(record):
         """
-        deletes a record or records from the local db
-        :param records:
+        Merges (updates) a record into the db.
+        Shouldn't be used for new records.
+        :param record:
         :return:
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
-            for record in records:
+            session.merge(record)
+            session.commit()
+            logger.debug(_("Successfully merged record {record}")
+                         .format(record=record))
+            return True
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to merge record {record}")
+                             .format(record=record))
+            return False
+        finally:
+            session.close()
+
+    @staticmethod
+    def delete(record):
+        """
+        deletes a record from the db
+        :param record:
+        :return:
+        """
+        session = SessionLocal()
+        try:
+            for record in record:
                 session.delete(record)
             session.commit()
-            logger.debug(ngettext("Successfully deleted record {records}",
-                                  "Successfully deleted records in {records}",
-                                  len(records))
-                         .format(records=records))
+            logger.debug(_("Successfully deleted record {record}")
+                         .format(record=record))
             return True
         except sqlalchemy.exc.SQLAlchemyError as exc:
             print(exc)
-            logger.error(ngettext("Failed to delete record {records}",
-                                  "Failed to delete records in {records}",
-                                  len(records))
-                         .format(records=records))
+            logger.error(_("Failed to delete record {record}")
+                         .format(record=record))
             return False
+        finally:
+            session.close()
 
-    def init_public_tables(self):
+    def create_all_tables(self):
         """
-        Formats the local database with the public tables.
+        Formats the database with the public tables.
         :return:
         """
         try:
             meta = Acd.Base.metadata
             meta.create_all(bind=self.engine)
-            logger.info(_('all tables created in local'))
+            logger.info(_('all tables created'))
             return True
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.error(_('failed to create local public tables'))
+            logger.error(_('failed to create all tables'))
             return False
 
     def has_a_base(self):
@@ -222,74 +221,82 @@ class H3AlchemyLocalDB:
         If there's at least one base in this DB (ie this is a valid H3 DB) will return True.
         :return:
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             if session.query(Acd.WorkBase).count() > 0:
-                logger.debug(_("Local DB at location {location} has at least one base")
+                logger.debug(_("DB at location {location} has at least one base")
                              .format(location=self.location))
                 return True
             else:
-                logger.debug(_("Local DB at location {location} has no bases")
+                logger.debug(_("DB at location {location} has no bases")
                              .format(location=self.location))
                 return False
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.debug(_("Unable to query local DB at location {location}")
+            logger.debug(_("Unable to query DB at location {location}")
                          .format(location=self.location))
             return False
+        finally:
+            session.close()
 
     def get_local_bases(self):
         """
-        Queries the local DB for job contracts stored in local DB, extracting the current bases
+        Queries the DB for job contracts, extracting the current bases
         :return: list of bases
         """
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             job_contracts = session.query(Acd.JobContract) \
                 .group_by(Acd.JobContract.base) \
                 .all()
             unique_bases = list()
             for job_contract in job_contracts:
                 unique_bases.append(job_contract.base)
-            logger.debug(_("List of bases in local DB : {list}")
+            logger.debug(_("List of bases in DB : {list}")
                          .format(list=str(unique_bases)))
             return unique_bases
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.warning(_("Unable to query local DB at location {location} for local bases")
+            logger.warning(_("Unable to query DB at location {location} for bases")
                            .format(location=self.location))
             return False
+        finally:
+            session.close()
 
     @staticmethod
     def get_contract_actions(job_contract):
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             actions = session.query(Acd.ContractAction) \
-                .filter(Acd.ContractAction.contract == job_contract.auto_id) \
+                .filter(Acd.ContractAction.contract == job_contract.code) \
                 .all()
             return actions
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Unable to query local DB for actions linked to contract {id}")
-                             .format(id=job_contract.auto_id))
+            logger.exception(_("Unable to query DB for actions linked to contract {id}")
+                             .format(id=job_contract.code))
             return False
+        finally:
+            session.close()
 
     @staticmethod
     def get_current_delegations(job_contract):
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             delegations = session.query(Acd.Delegation) \
-                .filter(Acd.Delegation.delegated_to == job_contract.auto_id) \
+                .filter(Acd.Delegation.delegated_to == job_contract.code) \
                 .filter(Acd.Delegation.start_date <= datetime.date.today(),
                         Acd.Delegation.end_date >= datetime.date.today()) \
                 .all()
             return delegations
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Unable to query local DB for delegations given to contract {id}")
-                             .format(id=job_contract.auto_id))
+            logger.exception(_("Unable to query DB for delegations given to contract {id}")
+                             .format(id=job_contract.code))
             return False
+        finally:
+            session.close()
 
     @staticmethod
     def get_action_descriptions(action_id, lang):
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             description = session.query(Acd.Action) \
                 .filter(Acd.Action.code == action_id, Acd.Action.language == lang) \
                 .one()
@@ -297,18 +304,61 @@ class H3AlchemyLocalDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Error while trying to fetch {lang} description for Action {action_id}")
                              .format(lang=lang, action_id=action_id))
+        finally:
+            session.close()
 
     @staticmethod
     def get_last_synced_entry():
+        session = SessionLocal()
         try:
-            session = SessionLocal()
             latest = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.status.notlike("UNSUBMITTED")) \
-                .filter(Acd.SyncJournal.auto_id == sqlalchemy.func.max(Acd.SyncJournal.auto_id)) \
+                .filter(Acd.SyncJournal.serial > 0) \
+                .filter(Acd.SyncJournal.serial == sqlalchemy.func.max(Acd.SyncJournal.serial)) \
                 .one()
-            return latest.auto_id
+            return latest.code
         except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No sync entries in local, returning 1 to query all updates"))
-            return 1
+            logger.info(_("No sync entries in local, returning 0 to query all updates"))
+            return 0
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception((_("Error while getting the newest sync entry")))
+            logger.exception(_("Error while getting the newest sync entry"))
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_highest_serial(mapped_class, work_base=None):
+        session = SessionLocal()
+        try:
+            if work_base:
+                latest = session.query(mapped_class) \
+                    .filter(mapped_class.serial > 0) \
+                    .filter(mapped_class.base == work_base,
+                            mapped_class.serial == sqlalchemy.func.max(mapped_class.serial)) \
+                    .one()
+            else:
+                latest = session.query(mapped_class) \
+                    .filter(Acd.SyncJournal.serial > 0) \
+                    .filter(Acd.SyncJournal.serial == sqlalchemy.func.max(Acd.SyncJournal.serial)) \
+                    .one()
+            return latest.serial
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.info(_("No entries for this class, serial defaulted to 0"))
+            return 0
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Error getting the highest serial for class {cls}")
+                             .format(cls=mapped_class))
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_update_queue():
+        session = SessionLocal()
+        try:
+            updates = session.query(Acd.SyncJournal) \
+                .filter(Acd.SyncJournal.serial < 0) \
+                .order_by(Acd.SyncJournal.serial.desc()) \
+                .all()
+            return updates
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception((_("Error while getting the unsubmitted sync entries")))
+        finally:
+            session.close()

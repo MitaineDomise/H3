@@ -9,6 +9,17 @@ from . import AlchemyClassDefs as Acd
 
 logger = logging.getLogger(__name__)
 
+code_prefixes = dict({'bases': 'BASE',
+                      'users': 'USER',
+                      'jobs': 'JOB',
+                      'job_contracts': 'JOBCONTRACT',
+                      'actions': 'ACTION',
+                      'contract_actions': 'CONTRACTACTION',
+                      'delegations': 'DELEGATION',
+                      'journal_entries': 'JOURNALENTRY',
+                      'messages': 'MESSAGES'})
+
+# TODO : Local + Remote Session management from core ?
 
 class H3AlchemyCore:
     """
@@ -28,6 +39,9 @@ class H3AlchemyCore:
 
         self.contract_actions = list()
         self.delegations = list()
+
+        self.global_serials = dict()
+        self.base_serials = dict()
 
         self.language = "EN_UK"
 
@@ -78,7 +92,7 @@ class H3AlchemyCore:
 
     # Wizard-related functions
 
-    def ready(self):
+    def wizard_system_ready(self):
         """
         Checks that options are set for local and remote DB locations plus a current user;
         If local DB is valid (ping returns true), will try to update that user's details and return True.
@@ -94,16 +108,16 @@ class H3AlchemyCore:
                     if self.options.has_option('H3 Options', 'current user'):
                         username = self.options.get('H3 Options', 'current user')
                         self.current_job_contract = self.local_db.get_current_job_contract(username)
-                        if self.local_db.get_user(username):
+                        if self.local_db.get_from_primary_key(Acd.User, username):
                             return True
 
-    def setup_databases(self, local, remote):
+    def wizard_setup_databases(self, local, remote):
         """
         Creates the local and remote DB instances and saves their location to the config file.
         Called from the setup wizard.
         """
         self.local_db = AlchemyLocal.H3AlchemyLocalDB(local)
-        self.local_db.init_public_tables()
+        self.local_db.create_all_tables()
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(remote)
         if not self.options.has_section('DB Locations'):
             self.options.add_section('DB Locations')
@@ -111,12 +125,12 @@ class H3AlchemyCore:
         self.options.set('DB Locations', 'remote', remote)
         self.options.write(open('config.txt', 'w'))
 
-    def find_user(self, username):
+    def wizard_find_user(self, username):
         """
         Called from the wizard to find out the status of the "new user" credentials provided.
         :param username: the username to set up.
         """
-        user = self.local_db.get_user(username)
+        user = self.local_db.get_from_primary_key(Acd.User, username)
         if user:
             self.user_state = "local"
         else:
@@ -131,7 +145,7 @@ class H3AlchemyCore:
         if user:
             self.wizard_user_details(username)
 
-    def get_current_user_job_contract(self, username):
+    def wizard_get_current_user_job_contract(self, username):
         """
         Called by wizard on finding a user which isn't in the local DB but IS in the remote.
         """
@@ -202,6 +216,7 @@ class H3AlchemyCore:
         """
         if self.local_db.login(username, password):
             self.update_user_status(username)
+            self.extract_current_serials()
         else:
             self.user_state = "nok"
 
@@ -250,10 +265,10 @@ class H3AlchemyCore:
         self.delegations = self.local_db.get_current_delegations(self.current_job_contract)
 
     def get_base(self, base_code):
-        return self.local_db.get_base(base_code)
+        return self.local_db.get_from_primary_key(Acd.WorkBase, base_code)
 
     def get_user(self, username):
-        return self.local_db.get_user(username)
+        return self.local_db.get_from_primary_key(Acd.User, username)
 
     def read_table(self, class_of_table, location):
         if location == "local":
@@ -262,6 +277,7 @@ class H3AlchemyCore:
             return self.remote_db.read_table(class_of_table)
 
     def remote_create_user(self, login, password, first_name, last_name):
+        # TODO: delete that shit ?
         """
         Builds the user object and sends it to the remote engine for app- and SQL-level setup.
         :param login:
@@ -270,6 +286,7 @@ class H3AlchemyCore:
         :param last_name:
         :return:
         """
+        # noinspection PyArgumentList
         user = Acd.User(login=login, pw_hash=password, first_name=first_name,
                         last_name=last_name)
         self.remote_db.create_user(user)
@@ -286,15 +303,103 @@ class H3AlchemyCore:
                                      table="bases",
                                      key=base.code,
                                      status="UNSUBMITTED",
-                                     local_timestamp=datetime.datetime.now())
-        self.local_db.put(base)
-        self.local_db.put(sync_entry)
+                                     local_timestamp=datetime.datetime.utcnow())
+        self.local_db.merge(base)
+        self.local_db.merge(sync_entry)
 
     def sync_up(self):
         """
-
+        Sends unsubmitted (negative) sync entries to remote DB.
+        Should work first time on most cases; if there is a conflict, calls a rebase to solve it and resubmits.
         :return:
         """
+        updates = self.local_db.get_update_queue()
+        result = self.submit_updates_for_upload(updates)
+        if result == "conflict":
+            self.sync_down()
+            self.rebase_unsubmitted_updates()
+            self.sync_up()
+        elif result == "success":
+            self.sync_down()
+            return True
+
+    def submit_updates_for_upload(self, updates):
+        """
+        Tries an optimistic upload of unsubmitted updates.
+        :param updates:
+        :return: synchronization result : success, error or conflict (needs to rebase)
+        """
+        upward_sync_status = "success"
+        for update in updates:
+
+            if update.status == "UNSUBMITTED":
+                record_class = self.get_class_by_table_name(update.table)
+                record = self.local_db.get_from_primary_key(record_class, update.key) \
+                    .copy()
+                record.code = record.code.lstrip("TMP-")
+
+                if update.type == "create":
+                    result, timestamp = self.remote_db.add(record)
+                elif update.type == "update":
+                    result, timestamp = self.remote_db.merge(record)
+                elif update.type == "delete":
+                    result, timestamp = self.remote_db.delete(record)
+
+            if result == "ok":
+                update.status = "ACCEPTED"
+                update.processed_timestamp = timestamp
+            elif result == "dupe":
+                upward_sync_status = "conflict"
+                update.status = "MODIFIED"
+                update.processed_timestamp = timestamp
+            elif result == "err":
+                upward_sync_status = "error"
+                update.status = "REJECTED"
+                update.processed_timestamp = timestamp
+
+        if upward_sync_status == "success":
+            for update in updates:
+                self.local_db.delete(update)
+                update.code = None
+                self.remote_db.merge(update)
+
+        return upward_sync_status
+
+    def rebase_unsubmitted_updates(self):
+        """
+        Will update temp numbers to follow the canonical ones downloaded from the central DB
+        Will also raise errors when stocks or budgets go negative !
+        :return:
+        """
+        updates = self.local_db.get_update_queue()
+        self.extract_current_serials()
+        # for update in updates:
+        #     pass
+
+    def extract_current_serials(self):
+        """
+        At login, populates the 2 dicts keeping track of the current highest serial for all transactions
+        :return:
+        """
+        for table in Acd.Base.metadata.tables:
+            table_name = table.key
+            mapped_class = self.get_class_by_table_name(table_name)
+            if mapped_class.is_local:
+                for base in self.base_visibility:
+                    self.base_serials[table_name][base] = self.local_db.get_highest_serial(mapped_class, base)
+            else:
+                self.global_serials[table_name] = self.local_db.get_highest_serial(mapped_class)
+
+    def repost(self, update):
+        record_class = self.get_class_by_table_name(update.table)
+        record = self.local_db.get_from_primary_key(record_class, update.key)
+        # record.code = self.next_(record_class)
+
+        new_update = update.copy()
+        new_update.status = "UNSUBMITTED"
+        new_update.local_timestamp = datetime.datetime.utcnow()
+        new_update.key = record.code
+        self.local_db.add(new_update)
 
     def sync_down(self):
         """
@@ -302,32 +407,34 @@ class H3AlchemyCore:
         :return:
         """
         current_cursor = self.local_db.get_last_synced_entry()
-        updates = self.remote_db.get_updates(current_cursor, self.current_job_contract)
-        self.process_updates(updates)
+        updates = self.remote_db.get_updates(current_cursor, self.base_visibility)
+        self.process_downloaded_updates(updates)
+        self.rebase_unsubmitted_updates()
 
-    def process_updates(self, updates):
-        hundred_percent = len(updates)  # Preparing for progress bar...
+    def process_downloaded_updates(self, updates):
+        """
+        Records updates from the main DB as-is.
+        The generic record parser means each record gets downloaded separately.
+        :param updates:
+        :return:
+        """
+        # hundred_percent = len(updates)  # Preparing for progress bar...
         for update in updates:
+            self.local_db.add(update)
             class_to_update = self.get_class_by_table_name(update.table)
             record = self.remote_db.get_from_primary_key(class_to_update, update.key)
-            if update.type == "create" or update.type == "update":
-                self.local_db.put([record, ])
+            if update.type == "create":
+                self.local_db.add(record)
+            if update.type == "update":
+                self.local_db.merge(record)
             elif update.type == "delete":
-                self.local_db.delete([record, ])
+                self.local_db.delete(record)
 
     @staticmethod
     def get_class_by_table_name(tablename):
         for c in Acd.Base._decl_class_registry.values():
             if hasattr(c, '__tablename__') and c.__tablename__ == tablename:
                 return c
-
-    def get_visible_users(self):
-        """
-        Returns the users in the remote user list that belong to the visible bases,
-        e.g the ones belonging to the install base or below
-        :return:
-        """
-        return self.remote_db.get_visible_users(self.base_visibility)
 
     def remote_pw_change(self, username, old_pass, new_pass):
         self.remote_db.login(username, old_pass)
@@ -338,8 +445,8 @@ class H3AlchemyCore:
             logger.error(_("Couldn't change password in remote for user {login}")
                          .format(login=username))
 
-    def get_action_descriptions(self, id):
-        return self.local_db.get_action_descriptions(id, self.language)
+    def get_action_descriptions(self, action_id):
+        return self.local_db.get_action_descriptions(action_id, self.language)
 
     def get_user_count(self, base_code):
         return self.remote_db.user_count(base_code)

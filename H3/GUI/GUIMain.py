@@ -70,13 +70,13 @@ class SetupWizard:
         self.wizard.accepted.connect(H3Core.sync_down)
         # TODO: should have some kind of progress bar / animation
         if (self.wizard.exec_() == QtGui.QDialog.Rejected
-           and not H3Core.ready()):
+            and not H3Core.wizard_system_ready()):
             sys.exit()
 
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
         temp_user_ok = self.wizard.user_ok
-        H3Core.find_user(username)
+        H3Core.wizard_find_user(username)
         if H3Core.user_state == "local":
             self.wizard.userStatusLabel.setText(_("User {login} already recorded locally, you can proceed !")
                                                 .format(login=username))
@@ -152,7 +152,6 @@ class SetupWizard:
         """
         local_db_exists = H3Core.ping_local(self.wizard.localAddress.text())
         temp_local_ok = self.wizard.local_ok
-        str(temp_local_ok)  # again useless
         if local_db_exists == -1:
             self.wizard.localDBstatus.setText(_("Ready to create new local DB at {location}")
                                               .format(location=self.wizard.localAddress.text()))
@@ -181,7 +180,6 @@ class SetupWizard:
         if location != "":
             remote_db_exists = H3Core.ping_remote(location)
             temp_remote_ok = self.wizard.remote_ok
-            str(temp_remote_ok)  # useless
             if remote_db_exists == 1:
                 self.wizard.remoteDBstatus.setText(_("Successfully contacted H3 DB at {location}")
                                                    .format(location=self.wizard.remoteAddress.text()))
@@ -231,8 +229,8 @@ class LoginWizardPage(QtGui.QWizardPage):
             return False
 
     def initializePage(self, *args, **kwargs):
-        H3Core.setup_databases(self.wizard().localAddress.text(),
-                               self.wizard().remoteAddress.text())
+        H3Core.wizard_setup_databases(self.wizard().localAddress.text(),
+                                      self.wizard().remoteAddress.text())
         self.wizard().passwordLineEdit.hide()
         self.wizard().passwordLabel.hide()
         self.wizard().confirmPasswordLineEdit.hide()
@@ -244,7 +242,7 @@ class RecapWizardPage(QtGui.QWizardPage):
         super(RecapWizardPage, self).__init__(parent)
 
     def initializePage(self, *args, **kwargs):
-        H3Core.get_current_user_job_contract(self.wizard().usernameLineEdit.text())
+        H3Core.wizard_get_current_user_job_contract(self.wizard().usernameLineEdit.text())
 
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
@@ -367,7 +365,7 @@ class H3MainGUI:
 
         # TODO : Have Status bar watch the log file for messages (store in a tablemodel)+"local DB Accessible" indicator
 
-        while not H3Core.ready():
+        while not H3Core.wizard_system_ready():
             self.run_setup_wizard()
 
         LoginBox(self)
@@ -438,6 +436,7 @@ class H3MainGUI:
 
     @staticmethod
     def load_resource_file():
+        # noinspection PyTypeChecker
         if QtCore.QResource.registerResource("H3/GUI/QtDesigns/H3.rcc"):
             logger.debug(_("Resource file opened successfully"))
         else:
@@ -541,6 +540,7 @@ class ManageBases:
         create_base_box.openingDateDateEdit.setDate(datetime.date.today())
 
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
+            # noinspection PyArgumentList
             new_base = Acd.WorkBase(code="TEMP_" + create_base_box.baseCodeLineEdit.text(),
                                     parent=create_base_box.parentBaseComboBox.text(),
                                     full_name=create_base_box.fullNameLineEdit.text(),

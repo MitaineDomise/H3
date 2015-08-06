@@ -144,7 +144,8 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.exception(_("Password change has failed for {name}; login has been denied with the new password.")
                              .format(name=username))
-            return False
+        finally:
+            session.close()
 
     def create_user(self, user):
         """
@@ -153,11 +154,10 @@ class H3AlchemyRemoteDB:
         :param user: User object with the pw_hash field actually storing the password PLAIN.
         :return:
         """
-        session = None
         conn = None
         hashed_login = hashlib.md5(('H3' + user.login).encode(encoding='ascii')).hexdigest()
+        session = SessionRemote()
         try:
-            session = SessionRemote()
 
             # SQL-level
             conn = self.engine.connect()
@@ -191,6 +191,8 @@ class H3AlchemyRemoteDB:
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
             return False
+        finally:
+            session.close()
 
     def create_base(self, base):
         """
@@ -198,11 +200,9 @@ class H3AlchemyRemoteDB:
         :param base:
         :return:
         """
-        session = None
-        conn = None
+        conn = self.engine.connect()
+        session = SessionRemote()
         try:
-            session = SessionRemote()
-            conn = self.engine.connect()
 
             # App-level
             session.add(base)
@@ -214,9 +214,9 @@ class H3AlchemyRemoteDB:
 
             # SQL-level
             query1 = sqlalchemy.text('CREATE ROLE {base}_users;'
-                                     .format(base=base.code.lower()))
+                                     .format(base=base.identifier.lower()))
             query2 = sqlalchemy.text('GRANT h3_users TO {base}_users;'
-                                     .format(base=base.code.lower()))
+                                     .format(base=base.identifier.lower()))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query1)
@@ -234,32 +234,41 @@ class H3AlchemyRemoteDB:
             session.rollback()
 
             query = sqlalchemy.text('DROP ROLE IF EXISTS {base}_users;'
-                                    .format(base=base.code.lower()))
+                                    .format(base=base.identifier.lower()))
 
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
 
             return False
+        finally:
+            session.close()
 
     @staticmethod
     # TODO : actually use this
-    def get_career(user):
+    def get_career(username):
         """
         Get the list of jobs for a user.
-        :param user: user object to find jobs
+        :param username: user login to query
         :return:
         """
         session = SessionRemote()
-        jobs = session.query(Acd.JobContract) \
-            .filter(Acd.JobContract.user == user.login) \
-            .order_by(Acd.JobContract.start_date) \
-            .all()
-        if jobs:
-            return jobs
-        else:
-            logger.info(_("No current contract."))
-            return None
+        try:
+            jobs = session.query(Acd.JobContract) \
+                .filter(Acd.JobContract.user == username) \
+                .order_by(Acd.JobContract.start_date) \
+                .all()
+            if jobs:
+                return jobs
+            else:
+                logger.info(_("No current contract."))
+                return None
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.error(_("Error querying DB for user {user}'s career")
+                         .format(user=username))
+        finally:
+            session.close()
 
+    # noinspection PyArgumentList
     def initialize(self, password):
         """
         Logs in with master PG password (warning !)
@@ -297,21 +306,27 @@ class H3AlchemyRemoteDB:
 
             # Definition of root objects follows
 
-        reader_user = Acd.User(login='reader',
+        reader_user = Acd.User(code='USER-1',
+                               serial=1,
+                               login='reader',
                                pw_hash='weak',
                                first_name='Reader',
                                last_name='H3',
                                created_date=datetime.date.today(),
                                banned_date=datetime.date(3000, 6, 6))
 
-        root_user = Acd.User(login='root',
+        root_user = Acd.User(code='USER-2',
+                             serial=2,
+                             login='root',
                              pw_hash='secret',
                              first_name='Administrator',
                              last_name='H3',
                              created_date=datetime.date.today(),
                              banned_date=datetime.date(3000, 6, 6))
 
-        root_base = Acd.WorkBase(code='root',
+        root_base = Acd.WorkBase(code='BASE-1',
+                                 serial=1,
+                                 identifier='root',
                                  parent='root',
                                  full_name='Hierarchy root',
                                  opened_date=datetime.date.today(),
@@ -319,9 +334,10 @@ class H3AlchemyRemoteDB:
                                  country='XX',
                                  time_zone='UTC')
 
-        root_job = Acd.Job(code='FP')
+        root_job = Acd.Job(code='JOB-1',
+                           title='FP')
 
-        root_contract = Acd.JobContract(auto_id=1,
+        root_contract = Acd.JobContract(code='JOBCONTRACT-1',
                                         user='root',
                                         start_date=datetime.date.today(),
                                         end_date=datetime.date(3000, 6, 6),
@@ -329,44 +345,62 @@ class H3AlchemyRemoteDB:
                                         job_title='Global FP',
                                         base='root')
 
-        root_a_1 = Acd.Action(code='manage_users',
+        root_a_1 = Acd.Action(code='ACTION-1',
+                              serial=1,
+                              category_title='manage_users',
                               language="EN_UK",
                               category="Administration",
                               description="Manage users")
-        root_a_2 = Acd.Action(code='manage_bases',
+        root_a_2 = Acd.Action(code='ACTION-2',
+                              serial=2,
+                              category_title='manage_bases',
                               language="EN_UK",
                               category="Logistics",
                               description="Manage bases")
-        root_a_3 = Acd.Action(code='manage_jobs',
+        root_a_3 = Acd.Action(code='ACTION-3',
+                              serial=3,
+                              category_title='manage_jobs',
                               language="EN_UK",
                               category="FP",
                               description="Manage jobs")
-        root_a_4 = Acd.Action(code='manage_job_contracts',
+        root_a_4 = Acd.Action(code='ACTION-4',
+                              serial=4,
+                              category_title='manage_job_contracts',
                               language="EN_UK",
                               category="Administration",
                               description="Manage job contracts")
-        root_a_5 = Acd.Action(code='manage_contract_actions',
+        root_a_5 = Acd.Action(code='ACTION-5',
+                              serial=5,
+                              category_title='manage_contract_actions',
                               language="EN_UK",
                               category="Logistics",
                               description="Manage contract actions")
 
-        root_c_a_1 = Acd.ContractAction(contract=1,
-                                        action='manage_users',
+        root_c_a_1 = Acd.ContractAction(code='CONTRACTACTION-1',
+                                        serial=1,
+                                        contract='CONTRACT-1',
+                                        action='ACTION-1',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_2 = Acd.ContractAction(contract=1,
-                                        action='manage_bases',
+        root_c_a_2 = Acd.ContractAction(code='CONTRACTACTION-2',
+                                        serial=2,
+                                        contract='CONTRACT-1',
+                                        action='ACTION-2',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_3 = Acd.ContractAction(contract=1,
-                                        action='manage_jobs',
+        root_c_a_3 = Acd.ContractAction(code='CONTRACTACTION-3',
+                                        serial=3,
+                                        contract='CONTRACT-1',
+                                        action='ACTION-3',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_4 = Acd.ContractAction(contract=1,
-                                        action='manage_job_contracts',
+        root_c_a_4 = Acd.ContractAction(code='CONTRACTACTION-1',
+                                        serial=4,
+                                        contract='CONTRACT-1',
+                                        action='ACTION-4',
                                         scope='all',
                                         maximum=-1)
 
@@ -375,19 +409,21 @@ class H3AlchemyRemoteDB:
         #                                 scope='all',
         #                                 maximum=-1)
 
-        root_delegation = Acd.Delegation(start_date=datetime.date.today(),
+        root_delegation = Acd.Delegation(code='DELEGATION-1',
+                                         serial=1,
+                                         start_date=datetime.date.today(),
                                          end_date=datetime.date(3000, 6, 6),
-                                         action='manage_contract_actions',
-                                         delegated_from=1,
-                                         delegated_to=1,
+                                         action='ACTION-5',
+                                         delegated_from='CONTRACT-1',
+                                         delegated_to='CONTRACT-1',
                                          scope='all',
                                          maximum=-1)
 
-        initial_sync_entry = Acd.SyncJournal(origin_base=1,
-                                             origin_user=1,
+        initial_sync_entry = Acd.SyncJournal(origin_jc='JOBCONTRACT-1',
+                                             target_jc='JOBCONTRACT-1',
                                              type="INIT",
                                              status="INIT",
-                                             local_timestamp=datetime.datetime.now())
+                                             local_timestamp=datetime.date(1900, 1, 1))
         try:
             cnx = self.engine.connect()
             cnx.execution_options(isolation_level="AUTOCOMMIT")
@@ -411,7 +447,7 @@ class H3AlchemyRemoteDB:
             query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM "f66ce97dfce5d8604edab9a721f3b85b";')
             query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
-            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, job_contracts '
+            query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, job_contracts '
                                      'TO "f66ce97dfce5d8604edab9a721f3b85b";')
 
             logger.debug(_("Given users rights to FP group role"))
@@ -424,7 +460,7 @@ class H3AlchemyRemoteDB:
             cnx.execute(query7)
             logger.debug(_("FP group can now change users and bases tables"))
             cnx.execute(query8)
-            logger.debug(_("Reader role can now see users and bases (only)"))
+            logger.debug(_("Reader role can now see users, bases and job contracts only"))
 
             cnx.close()
 
@@ -493,105 +529,173 @@ class H3AlchemyRemoteDB:
             print(_("DB Wipe failed, see log.txt for details"))
 
     @staticmethod
+    def add(record):
+        """
+        Adds (inserts) a record into the remote db.
+        Should be used for new records.
+        :param record:
+        :return:
+        """
+        try:
+            timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        except sqlalchemy.exc.SQLAlchemyError:
+            timestamp = datetime.datetime.utcnow()
+
+        session = SessionRemote()
+        try:
+            session.add(record)
+            session.commit()
+            logger.debug(_("Successfully inserted record {record}")
+                         .format(record=record))
+            return "ok", timestamp
+        except sqlalchemy.exc.IntegrityError:
+            logger.debug(_("Primary key already exists"))
+            return "dupe", timestamp
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to insert record {record}")
+                             .format(record=record))
+            return "err", timestamp
+        finally:
+            session.close()
+
+    @staticmethod
+    def merge(record):
+        """
+        Merges (updates) a record into the local db.
+        Shouldn't be used for new records.
+        :param record:
+        :return:
+        """
+        try:
+            timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        except sqlalchemy.exc.SQLAlchemyError:
+            timestamp = datetime.datetime.utcnow()
+
+        session = SessionRemote()
+        try:
+            session.merge(record)
+            session.commit()
+            logger.debug(_("Successfully merged record {record}")
+                         .format(record=record))
+            return "ok", timestamp
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to merge record {record}")
+                             .format(record=record))
+            return "err", timestamp
+        finally:
+            session.close()
+
+    @staticmethod
+    def delete(record):
+        """
+        deletes a record from the local db
+        :param record:
+        :return:
+        """
+        try:
+            timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        except sqlalchemy.exc.SQLAlchemyError:
+            timestamp = datetime.datetime.utcnow()
+
+        session = SessionRemote()
+        try:
+            session.delete(record)
+            session.commit()
+            logger.debug(_("Successfully deleted record {record}")
+                         .format(record=record))
+            return "ok", timestamp
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to delete record {record}")
+                             .format(record=record))
+            return "err", timestamp
+        finally:
+            session.close()
+
+    @staticmethod
     def read_table(class_of_table):
         """
         Reads a whole table, returning a list of its objects (records)
         :param class_of_table:
         :return:
         """
+        session = SessionRemote()
         try:
-            session = SessionRemote()
             table = session.query(class_of_table).all()
-            logger.debug(_("Successfully read table {table} from remote")
+            logger.debug(_("Successfully read table {table}")
                          .format(table=class_of_table))
             return table
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.error(_("Failed to read table {table} from remote")
+            logger.error(_("Failed to read table {table}")
                          .format(table=class_of_table))
             return False
-
-    @staticmethod
-    def get_visible_users(bases_list):
-        """
-        Get the users from a given list of bases, for display by H3.
-        :param bases_list:
-        :return:
-        """
-        session = SessionRemote()
-        ret = session.query(Acd.User.login,
-                            Acd.User.first_name,
-                            Acd.User.last_name,
-                            Acd.JobContract.job_title,
-                            Acd.JobContract.base) \
-            .filter(Acd.User.login == Acd.JobContract.user) \
-            .filter(Acd.JobContract.base.in_(bases_list)) \
-            .order_by(Acd.JobContract.base).all()
-        return ret
+        finally:
+            session.close()
 
     @staticmethod
     def get_current_job_contract(username):
         """
         Finds the user's current job.
-        :param user: A User name string to get details from
+        :param username: A User name string to get details from
         :return:
         """
+        session = SessionRemote()
         try:
-            session = SessionRemote()
             current_job = session.query(Acd.JobContract) \
                 .filter(Acd.JobContract.user == username) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
                 .one()
-            logger.debug(_("Active job found in remote for user {name} : {job} - {title}")
+            logger.debug(_("Active job found for user {name} : {job} - {title}")
                          .format(name=username, job=current_job.job_code, title=current_job.job_title))
             return current_job
         except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No active jobs found in remote for user {name}")
+            logger.info(_("No active jobs found for user {name}")
                         .format(name=username))
             return None
         except sqlalchemy.orm.exc.MultipleResultsFound:
-            logger.error(_("Multiple active jobs found in remote for user {name} !")
+            logger.error(_("Multiple active jobs found for user {name} !")
                          .format(name=username))
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Querying the remote DB for {user}'s current job failed")
+            logger.exception(_("Querying the DB for {user}'s current job failed")
                              .format(user=username))
+        finally:
+            session.close()
 
     @staticmethod
     def user_count(base_code):
+        session = SessionRemote()
         try:
-            session = SessionRemote()
             return session.query(Acd.JobContract) \
                 .filter(Acd.JobContract.base == base_code) \
                 .count()
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Querying the remote DB for user count failed"))
+            logger.exception(_("Querying the DB for user count failed"))
             return False
+        finally:
+            session.close()
 
     @staticmethod
-    def post(sync_entry):
+    def get_updates(first_update, bases_list):
+        """
+        Extract sync journal entries targeted to the root job contract (public) OR to any of the bases the user sees.
+        Actions / Delegations will be caught by this.
+        :param first_update:
+        :param bases_list:
+        :return:
+        """
+        session = SessionRemote()
         try:
-            session = SessionRemote()
-            session.add(sync_entry)
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to post the journal entry to remote !"))
-
-    @staticmethod
-    def get_updates(first_update, job_contract):
-        try:
-            session = SessionRemote()
-
             updates = session.query(Acd.SyncJournal) \
-                .filter(Acd.SyncJournal.auto_id > first_update) \
-                .options(sqlalchemy.orm.joinedload(Acd.SyncJournal.entry_target_fk)) \
-                .filter(sqlalchemy.or_(Acd.SyncJournal.table.in_(["bases", "jobs", "actions"]),
-                                       Acd.SyncJournal.target_jc == job_contract.auto_id,
-                                       Acd.SyncJournal.entry_target_fk.base == job_contract.base,
-                                       Acd.SyncJournal.entry_target_fk.job_code == job_contract.job_code,
-                                       Acd.SyncJournal.entry_target_fk.user == job_contract.user)) \
+                .filter(Acd.SyncJournal.serial > first_update) \
+                .options(sqlalchemy.orm.joinedload(Acd.SyncJournal.sync_target_jc_fk)) \
+                .filter(sqlalchemy.or_(Acd.SyncJournal.target_jc == "JOBCONTRACT-1",
+                                       Acd.SyncJournal.sync_target_jc_fk.base.in_(bases_list))) \
                 .all()
             return updates
         except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to download updates from remote"))
+            logger.exception(_("Failed to download updates"))
+        finally:
+            session.close()
 
     @staticmethod
     def get_from_primary_key(class_to_query, p_key):
@@ -605,3 +709,5 @@ class H3AlchemyRemoteDB:
         except sqlalchemy.exc.SQLAlchemyError:
             logger.error(_("Failed to get object of type {cls} with primary key {key}")
                          .format(cls=class_to_query, key=p_key))
+        finally:
+            session.close()
