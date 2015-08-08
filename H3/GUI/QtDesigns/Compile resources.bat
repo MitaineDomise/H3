@@ -1,0 +1,1 @@
+C:\Qt\4.8.6\bin\rcc C:\Users\Emmanuel\Development\H3\H3\GUI\QtDesigns\H3.qrc -binary -o C:\Users\Emmanuel\Development\H3\H3\GUI\QtDesigns\H3.rcc

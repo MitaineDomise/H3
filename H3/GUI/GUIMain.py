@@ -48,15 +48,16 @@ class SetupWizard:
 
         if H3Core.local_db:
             self.wizard.localAddress.setText(H3Core.local_db.location)
-            self.wizard.check_local()
+            self.check_local()
 
         if H3Core.remote_db:
             self.wizard.remoteAddress.setText(H3Core.remote_db.location)
-            self.wizard.check_remote()
+            self.check_remote()
 
         if H3Core.current_job_contract:
-            self.wizard.usernameLineEdit.setText(H3Core.current_job_contract.user)
-            self.wizard.check_user()
+            user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "local")
+            self.wizard.usernameLineEdit.setText(user.login)
+            self.check_user()
 
         self.wizard.browseButton.clicked.connect(self.browse)
 
@@ -69,14 +70,18 @@ class SetupWizard:
 
         self.wizard.accepted.connect(H3Core.sync_down)
         # TODO: should have some kind of progress bar / animation
-        if (self.wizard.exec_() == QtGui.QDialog.Rejected
-            and not H3Core.wizard_system_ready()):
+        if self.wizard.exec_() == QtGui.QDialog.Rejected and not H3Core.wizard_system_ready():
             sys.exit()
 
     def check_user(self):
         username = self.wizard.usernameLineEdit.text()
+        # noinspection PyUnusedLocal
         temp_user_ok = self.wizard.user_ok
-        H3Core.wizard_find_user(username)
+        if username == "":
+            self.wizard.userStatusLabel.setText("")
+        else:
+            H3Core.wizard_find_user(username)
+
         if H3Core.user_state == "local":
             self.wizard.userStatusLabel.setText(_("User {login} already recorded locally, you can proceed !")
                                                 .format(login=username))
@@ -151,6 +156,7 @@ class SetupWizard:
         The logic to validate the local DB location : new, existing or file exists but not a DB ?
         """
         local_db_exists = H3Core.ping_local(self.wizard.localAddress.text())
+        # noinspection PyUnusedLocal
         temp_local_ok = self.wizard.local_ok
         if local_db_exists == -1:
             self.wizard.localDBstatus.setText(_("Ready to create new local DB at {location}")
@@ -179,6 +185,7 @@ class SetupWizard:
         location = self.wizard.remoteAddress.text()
         if location != "":
             remote_db_exists = H3Core.ping_remote(location)
+            # noinspection PyUnusedLocal
             temp_remote_ok = self.wizard.remote_ok
             if remote_db_exists == 1:
                 self.wizard.remoteDBstatus.setText(_("Successfully contacted H3 DB at {location}")
@@ -242,12 +249,14 @@ class RecapWizardPage(QtGui.QWizardPage):
         super(RecapWizardPage, self).__init__(parent)
 
     def initializePage(self, *args, **kwargs):
-        H3Core.wizard_get_current_user_job_contract(self.wizard().usernameLineEdit.text())
+        # H3Core.wizard_user_details(self.wizard().usernameLineEdit.text())  # details already pulled on finding user
 
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
-        self.wizard().nameRecap.setText(H3Core.current_job_contract.user)
+        user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+        self.wizard().nameRecap.setText(_("{first} {last}")
+                                        .format(first=user.first_name, last=user.last_name))
 
         if H3Core.user_state == "no_job":
             self.wizard().jobRecap.setText(_("No current contract"))
@@ -255,10 +264,10 @@ class RecapWizardPage(QtGui.QWizardPage):
             self.wizard().userActionRecap.setText(_("The user profile can not be used in H3"
                                                     " because it's not currently active"))
         else:
-            self.wizard().jobRecap.setText(H3Core.current_job_contract.job_code + " - "
-                                           + H3Core.current_job_contract.job_title)
-            self.wizard().baseRecap.setText(H3Core.current_job_contract.base + " - "
-                                            + H3Core.get_base(H3Core.current_job_contract.base).full_name)
+            self.wizard().jobRecap.setText(H3Core.current_job_contract.job_title)
+            base = H3Core.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base, "remote")
+            self.wizard().baseRecap.setText(_("{id} - {fullname}")
+                                            .format(id=base.identifier, fullname=base.full_name))
 
             if H3Core.user_state == "local":
                 self.wizard().userActionRecap.setText(_("The user profile was already set up in the local database."
@@ -376,7 +385,10 @@ class H3MainGUI:
                                         .format(first=H3Core.get_user(H3Core.current_job_contract.user).first_name,
                                                 last=H3Core.get_user(H3Core.current_job_contract.user).last_name,
                                                 job=H3Core.current_job_contract.job_title,
-                                                base=H3Core.get_base(H3Core.current_job_contract.base).full_name))
+                                                base=H3Core.get_from_primary_key(Acd.WorkBase,
+                                                                                 H3Core.current_job_contract.work_base,
+                                                                                 "local")
+                                                .full_name))
 
         actions_model = self.build_actions_menu()
         self.root_window.treeView.setModel(actions_model)
@@ -436,7 +448,7 @@ class H3MainGUI:
 
     @staticmethod
     def load_resource_file():
-        # noinspection PyTypeChecker
+        # noinspection PyTypeChecker,PyCallByClass
         if QtCore.QResource.registerResource("H3/GUI/QtDesigns/H3.rcc"):
             logger.debug(_("Resource file opened successfully"))
         else:
@@ -487,7 +499,7 @@ class ManageBases:
             for parent in tree_row:
                 for base in base_data:
                     if base.parent == parent.data(33).code and not base.code == base.parent:
-                        item = QtGui.QStandardItem(record.code)
+                        item = QtGui.QStandardItem(record.identifier)
                         item.setData(record, 33)
                         desc = QtGui.QStandardItem(record.full_name)
                         parent.appendRow(item)
@@ -553,11 +565,14 @@ class ManageBases:
 def run():
     h3app = QtGui.QApplication(sys.argv)
     desk = h3app.desktop()
+    # noinspection PyUnusedLocal
     h3gui = H3MainGUI(desk)
     h3app.exec_()
 
+
 def init_remote(location, password):
     H3Core.init_remote(location, password)
+
 
 def nuke_remote(location, password):
     H3Core.nuke_remote(location, password)

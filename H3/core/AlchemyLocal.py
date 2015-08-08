@@ -36,6 +36,7 @@ class H3AlchemyLocalDB:
             SessionLocal.configure(bind=self.engine)
             listen(self.engine, 'connect', self.activate_foreign_keys)
 
+    # noinspection PyUnusedLocal
     @staticmethod
     def activate_foreign_keys(db_api_connection, connection_record):
         """
@@ -66,6 +67,10 @@ class H3AlchemyLocalDB:
             logger.debug(_("Successfully logged in with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
             return True
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.debug(_("No matching pair for {user} / {password}")
+                         .format(user=username, password=hashed_pass))
+            return False
         except sqlalchemy.exc.SQLAlchemyError:
             logger.debug(_("Impossible to login with the pair {user} / {password}")
                          .format(user=username, password=hashed_pass))
@@ -89,28 +94,48 @@ class H3AlchemyLocalDB:
             session.close()
 
     @staticmethod
-    def get_current_job_contract(username):
+    def get_current_job_contract(user):
         """
         Finds the user's current job.
-        :param username: A User object to get details from
+        :param user: The User object to query
         :return:
         """
         session = SessionLocal()
         try:
             current_job = session.query(Acd.JobContract) \
-                .filter(Acd.JobContract.user == username) \
+                .filter(Acd.JobContract.user == user.code) \
                 .filter(Acd.JobContract.start_date <= datetime.date.today(),
                         Acd.JobContract.end_date >= datetime.date.today()) \
                 .one()
-            logger.debug(_("Active joor user {name} : {job} - {title}")
-                         .format(name=username, job=current_job.job_code, title=current_job.job_title))
+            logger.debug(_("Active job for user {name} : {job} - {title}")
+                         .format(name=user.login, job=current_job.job_code, title=current_job.job_title))
             return current_job
         except sqlalchemy.orm.exc.NoResultFound:
-            logger.info(_("No active jobor user {name}")
-                        .format(name=username))
+            logger.info(_("No active job for user {name}")
+                        .format(name=user.login))
             return None
         except sqlalchemy.orm.exc.MultipleResultsFound:
             logger.error(_("Multiple active jobs found for user {name} !")
+                         .format(name=user.login))
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_user_from_login(username):
+        session = SessionLocal()
+        try:
+            user = session.query(Acd.User) \
+                .filter(Acd.User.login == username) \
+                .one()
+            logger.debug(_("User {name} found with primary key {key}")
+                         .format(name=username, key=user.code))
+            return user
+        except sqlalchemy.orm.exc.NoResultFound:
+            logger.info(_("No user found with name {name}")
+                        .format(name=username))
+            return None
+        except sqlalchemy.orm.exc.MultipleResultsFound:
+            logger.error(_("Multiple records found for name {name} !")
                          .format(name=username))
         finally:
             session.close()
@@ -246,11 +271,11 @@ class H3AlchemyLocalDB:
         session = SessionLocal()
         try:
             job_contracts = session.query(Acd.JobContract) \
-                .group_by(Acd.JobContract.base) \
+                .group_by(Acd.JobContract.work_base) \
                 .all()
             unique_bases = list()
             for job_contract in job_contracts:
-                unique_bases.append(job_contract.base)
+                unique_bases.append(job_contract.work_base)
             logger.debug(_("List of bases in DB : {list}")
                          .format(list=str(unique_bases)))
             return unique_bases
@@ -325,20 +350,14 @@ class H3AlchemyLocalDB:
             session.close()
 
     @staticmethod
-    def get_highest_serial(mapped_class, work_base=None):
+    def get_highest_serial(mapped_class, work_base='GLOBAL'):
         session = SessionLocal()
         try:
-            if work_base:
-                latest = session.query(mapped_class) \
-                    .filter(mapped_class.serial > 0) \
-                    .filter(mapped_class.base == work_base,
-                            mapped_class.serial == sqlalchemy.func.max(mapped_class.serial)) \
-                    .one()
-            else:
-                latest = session.query(mapped_class) \
-                    .filter(Acd.SyncJournal.serial > 0) \
-                    .filter(Acd.SyncJournal.serial == sqlalchemy.func.max(Acd.SyncJournal.serial)) \
-                    .one()
+            latest = session.query(mapped_class) \
+                .filter(mapped_class.serial > 0) \
+                .filter(mapped_class.base == work_base,
+                        mapped_class.serial == sqlalchemy.func.max(mapped_class.serial)) \
+                .one()
             return latest.serial
         except sqlalchemy.orm.exc.NoResultFound:
             logger.info(_("No entries for this class, serial defaulted to 0"))
