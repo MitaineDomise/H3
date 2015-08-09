@@ -169,6 +169,7 @@ class H3AlchemyCore:
         """
         # TODO : If success, start a timer that will ping and sync the remote DB according to options.
         self.remote_db.login(username, password)
+        SessionRemote.configure(bind=self.remote_db.engine)
 
     # Application functions
 
@@ -338,7 +339,7 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
-        current_cursor = AlchemyLocal.get_highest_synced_sync_entry(local_session)
+        current_cursor = AlchemyGeneric.get_highest_synced_sync_entry(local_session)
         local_session.close()
 
         remote_session = SessionRemote()
@@ -578,3 +579,22 @@ def build_key(record, mapped_class):
                                                     period=period,
                                                     serial=record.serial)
     return code
+
+
+def download_public_tables():
+    # TODO: needs to be smarter. All bases and jobs, but only the current user and the JCs of visible bases.
+    remote_session = SessionRemote()
+    local_session = SessionLocal()
+    bases = AlchemyGeneric.read_table(remote_session, Acd.WorkBase)
+    users = AlchemyGeneric.read_table(remote_session, Acd.User)
+    jobs = AlchemyGeneric.read_table(remote_session, Acd.Job)
+    job_contracts = AlchemyGeneric.read_table(remote_session, Acd.JobContract)
+    latest_sync_serial = AlchemyGeneric.get_highest_synced_sync_entry(remote_session)
+    latest_sync_record = AlchemyGeneric.get_from_primary_key(remote_session, Acd.SyncJournal, latest_sync_serial)
+    remote_session.close()
+    for record in bases + users + jobs + job_contracts:
+        local_session.add(record)
+        logger.debug("insert")
+    local_session.add(latest_sync_record)
+    local_session.commit()
+    local_session.close()

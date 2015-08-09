@@ -57,7 +57,6 @@ class SetupWizard:
         if H3Core.current_job_contract:
             user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
             self.wizard.usernameLineEdit.setText(user.login)
-            self.check_user()
 
         self.wizard.browseButton.clicked.connect(self.browse)
 
@@ -84,6 +83,7 @@ class SetupWizard:
         password = self.wizard.passwordLineEdit.text()
         H3Core.local_login(username, password)
         H3Core.remote_login(username, password)
+        AlchemyCore.download_public_tables()
         H3Core.sync_down()
 
     def check_user(self):

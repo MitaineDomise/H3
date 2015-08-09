@@ -128,21 +128,6 @@ def get_lowest_queued_sync_entry(session):
         logger.exception(_("Error getting the Lowest (latest) sync entry serial"))
 
 
-def get_highest_synced_sync_entry(session):
-    try:
-        max_num = session.query(sqlalchemy.func.max(Acd.SyncJournal.serial).label('max')) \
-            .filter_by(Acd.SyncJournal.serial > 0) \
-            .one()
-        logger.debug(_("Latest sync entry in local has serial {no}")
-                     .format(no=max_num.max))
-        return max_num.max if max_num.max else 0
-    except sqlalchemy.orm.exc.NoResultFound:
-        logger.info(_("No synced sync entries, defaulting to 0"))
-        return 0
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Error while getting the newest synced sync entry"))
-
-
 def get_action_description(session, action_id, lang):
     try:
         description = session.query(Acd.Action) \

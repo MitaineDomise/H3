@@ -65,6 +65,8 @@ def get_from_primary_key(session, class_to_query, p_key):
         return None
     try:
         record = session.query(class_to_query).filter(primary == p_key).one()
+        logger.debug(_("Found object of type {cls} with primary key {key}")
+                     .format(cls=class_to_query, key=p_key))
         return record
     except sqlalchemy.orm.exc.NoResultFound:
         logger.info(_("No object of type {cls} with primary key {key}")
@@ -90,7 +92,6 @@ def add(session, record):
 
     try:
         session.add(record)
-        session.commit()
         logger.debug(_("Successfully inserted record {record}")
                      .format(record=record))
         return "ok", timestamp
@@ -116,7 +117,6 @@ def merge(session, record):
         timestamp = datetime.datetime.utcnow()
     try:
         session.merge(record)
-        session.commit()
         logger.debug(_("Successfully merged record {record}")
                      .format(record=record))
         return "ok", timestamp
@@ -124,8 +124,6 @@ def merge(session, record):
         logger.exception(_("Failed to merge record {record}")
                          .format(record=record))
         return "err", timestamp
-    finally:
-        session.close()
 
 
 def delete(session, record):
@@ -141,7 +139,6 @@ def delete(session, record):
 
     try:
         session.delete(record)
-        session.commit()
         logger.debug(_("Successfully deleted record {record}")
                      .format(record=record))
         return "ok", timestamp
@@ -149,8 +146,6 @@ def delete(session, record):
         logger.exception(_("Failed to delete record {record}")
                          .format(record=record))
         return "err", timestamp
-    finally:
-        session.close()
 
 
 def read_table(session, class_of_table):
@@ -168,3 +163,18 @@ def read_table(session, class_of_table):
         logger.error(_("Failed to read table {table}")
                      .format(table=class_of_table))
         return False
+
+
+def get_highest_synced_sync_entry(session):
+    try:
+        max_num = session.query(sqlalchemy.func.max(Acd.SyncJournal.serial).label('max')) \
+            .filter(Acd.SyncJournal.serial > 0) \
+            .one()
+        logger.debug(_("Latest sync entry has serial {no}")
+                     .format(no=max_num.max))
+        return max_num.max if max_num.max else 0
+    except sqlalchemy.orm.exc.NoResultFound:
+        logger.info(_("No synced sync entries, defaulting to 0"))
+        return 0
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Error while getting the newest synced sync entry"))
