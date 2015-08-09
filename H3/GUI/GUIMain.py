@@ -6,10 +6,10 @@ import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
 
-from H3.core.AlchemyCore import H3AlchemyCore
+from H3.core import AlchemyCore
 from H3.core import AlchemyClassDefs as Acd
 
-H3Core = H3AlchemyCore()
+H3Core = AlchemyCore.H3AlchemyCore()
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class SetupWizard:
             self.check_remote()
 
         if H3Core.current_job_contract:
-            user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "local")
+            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
             self.wizard.usernameLineEdit.setText(user.login)
             self.check_user()
 
@@ -68,12 +68,31 @@ class SetupWizard:
         self.wizard.usernameLineEdit.textChanged.connect(self.invalidate_user)
         self.wizard.searchButton.clicked.connect(self.check_user)
 
-        self.wizard.accepted.connect(H3Core.sync_down)
+        self.wizard.accepted.connect(self.connect_and_sync)
         # TODO: should have some kind of progress bar / animation
         if self.wizard.exec_() == QtGui.QDialog.Rejected and not H3Core.wizard_system_ready():
             sys.exit()
 
+    def connect_and_sync(self):
+        """
+        At the end of the wizard, login to the remote database with the user's credentials
+        and start processing the whole sync journal
+        :return:
+        """
+        # TODO: batch download the tables in a more efficient manner
+        username = self.wizard.usernameLineEdit.text()
+        password = self.wizard.passwordLineEdit.text()
+        H3Core.local_login(username, password)
+        H3Core.remote_login(username, password)
+        H3Core.sync_down()
+
     def check_user(self):
+        """
+        Checks that the login the user entered exists in either DB
+        The core will also check for cases like having no job or a job on a different base
+        :return:
+        """
+        # TODO: Move the check_xxx routines to the wizard pages
         username = self.wizard.usernameLineEdit.text()
         # noinspection PyUnusedLocal
         temp_user_ok = self.wizard.user_ok
@@ -109,7 +128,7 @@ class SetupWizard:
             self.wizard.userStatusLabel.setText(_("User {login} has no current contract. "
                                                   "Please contact your focal point")
                                                 .format(login=username))
-        else:
+        elif H3Core.user_state == "invalid":
             temp_user_ok = False
             self.wizard.userStatusLabel.setText(_("User {login} not found. Please contact your focal point.")
                                                 .format(login=username))
@@ -118,6 +137,11 @@ class SetupWizard:
             self.wizard.wizardPage3.completeChanged.emit()
 
     def check_pws(self):
+        """
+        Will check that the password is > 5 characters.
+        In the case of a new user, checks that both fields match.
+        :return:
+        """
         temp_pw_ok = self.wizard.pw_ok
         pw1 = self.wizard.passwordLineEdit.text()
         pw2 = self.wizard.confirmPasswordLineEdit.text()
@@ -155,7 +179,7 @@ class SetupWizard:
         """
         The logic to validate the local DB location : new, existing or file exists but not a DB ?
         """
-        local_db_exists = H3Core.ping_local(self.wizard.localAddress.text())
+        local_db_exists = AlchemyCore.ping_local(self.wizard.localAddress.text())
         # noinspection PyUnusedLocal
         temp_local_ok = self.wizard.local_ok
         if local_db_exists == -1:
@@ -184,7 +208,7 @@ class SetupWizard:
         """
         location = self.wizard.remoteAddress.text()
         if location != "":
-            remote_db_exists = H3Core.ping_remote(location)
+            remote_db_exists = AlchemyCore.ping_remote(location)
             # noinspection PyUnusedLocal
             temp_remote_ok = self.wizard.remote_ok
             if remote_db_exists == 1:
@@ -201,11 +225,17 @@ class SetupWizard:
                 self.wizard.wizardPage2.completeChanged.emit()
 
     def invalidate_remote(self):
+        """
+        Called on changing the remote DB address field after having checked it
+        """
         if self.wizard.remote_ok:
             self.wizard.remote_ok = False
             self.wizard.wizardPage2.completeChanged.emit()
 
     def invalidate_user(self):
+        """
+        Called on changing the login field after having checked it
+        """
         if self.wizard.user_ok:
             self.wizard.user_ok = False
             self.wizard.pw_ok = False
@@ -213,6 +243,10 @@ class SetupWizard:
 
 
 class ServerWizardPage(QtGui.QWizardPage):
+    """
+    Custom class with a specialized routine checking both DBs are reachable
+    before the user can proceed
+    """
     def __init__(self, parent):
         super(ServerWizardPage, self).__init__(parent)
 
@@ -225,6 +259,11 @@ class ServerWizardPage(QtGui.QWizardPage):
 
 
 class LoginWizardPage(QtGui.QWizardPage):
+    """
+    Custom class with a specialized routine checking the user exists
+    and password is correct before the user can proceed.
+    On init, will commit the database info from the previous page.
+    """
     def __init__(self, parent):
         super(LoginWizardPage, self).__init__(parent)
 
@@ -245,6 +284,11 @@ class LoginWizardPage(QtGui.QWizardPage):
 
 
 class RecapWizardPage(QtGui.QWizardPage):
+    """
+    Custom class with a specialized routine recapitulating the user info
+    and the relevant action the program will take.
+    On init, will commit the user info from the previous page.
+    """
     def __init__(self, parent):
         super(RecapWizardPage, self).__init__(parent)
 
@@ -254,7 +298,7 @@ class RecapWizardPage(QtGui.QWizardPage):
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
-        user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+        user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
         self.wizard().nameRecap.setText(_("{first} {last}")
                                         .format(first=user.first_name, last=user.last_name))
 
@@ -265,7 +309,7 @@ class RecapWizardPage(QtGui.QWizardPage):
                                                     " because it's not currently active"))
         else:
             self.wizard().jobRecap.setText(H3Core.current_job_contract.job_title)
-            base = H3Core.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base, "remote")
+            base = AlchemyCore.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base, "remote")
             self.wizard().baseRecap.setText(_("{id} - {fullname}")
                                             .format(id=base.identifier, fullname=base.full_name))
 
@@ -322,6 +366,10 @@ class LoginBox:
             sys.exit()
 
     def login_clicked(self):
+        """
+        Logs the user locally and checks for changes to his or her status.
+        Will exit after 5 tries.
+        """
         if self.login_attempts < 4:
             username = self.login_box.loginLineEdit.text()
             password = self.login_box.passwordLineEdit.text()
@@ -381,14 +429,14 @@ class H3MainGUI:
 
         self.current_screen = None
 
+        base = AlchemyCore.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base)
+        user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
+
         self.root_window.setWindowTitle(_("{first} {last}, {job}, {base}")
-                                        .format(first=H3Core.get_user(H3Core.current_job_contract.user).first_name,
-                                                last=H3Core.get_user(H3Core.current_job_contract.user).last_name,
+                                        .format(first=user.first_name,
+                                                last=user.last_name,
                                                 job=H3Core.current_job_contract.job_title,
-                                                base=H3Core.get_from_primary_key(Acd.WorkBase,
-                                                                                 H3Core.current_job_contract.work_base,
-                                                                                 "local")
-                                                .full_name))
+                                                base=base.full_name))
 
         actions_model = self.build_actions_menu()
         self.root_window.treeView.setModel(actions_model)
@@ -403,6 +451,10 @@ class H3MainGUI:
 
     @staticmethod
     def build_actions_menu():
+        """
+        Collects the actions the current user can execute and builds
+        a custom menu out of them.
+        """
         H3Core.get_actions()
         model = QtGui.QStandardItemModel()
 
@@ -410,7 +462,7 @@ class H3MainGUI:
         action_items = list()
 
         for contract_action in H3Core.contract_actions:
-            desc = H3Core.get_action_descriptions(contract_action.action)
+            desc = H3Core.get_action_description(contract_action.action)
             categories.add(desc.category)
             item = QtGui.QStandardItem(desc.description)
             item.setData(contract_action, 33)
@@ -419,7 +471,7 @@ class H3MainGUI:
             action_items.append(item)
 
         for delegation in H3Core.delegations:
-            desc = H3Core.get_action_descriptions(delegation.action)
+            desc = H3Core.get_action_description(delegation.action)
             categories.add(desc.category)
             item = QtGui.QStandardItem(desc.description)
             item.setData(delegation, 33)
@@ -448,6 +500,9 @@ class H3MainGUI:
 
     @staticmethod
     def load_resource_file():
+        """
+        Loads the resource file for icons, logos and other organization-specific files
+        """
         # noinspection PyTypeChecker,PyCallByClass
         if QtCore.QResource.registerResource("H3/GUI/QtDesigns/H3.rcc"):
             logger.debug(_("Resource file opened successfully"))
@@ -456,9 +511,13 @@ class H3MainGUI:
 
     @QtCore.Slot(int)
     def ui_switcher(self, action_menu_item):
+        """
+        From the entry selected in the actions menu, display the relevant widget
+        in the central area.
+        """
         action = ""
         if action_menu_item.data(34):
-            action = action_menu_item.data(34).code
+            action = action_menu_item.data(34).title
         if action == 'manage_bases':
             self.current_screen = ManageBases(self)
 
@@ -466,6 +525,9 @@ class H3MainGUI:
         SetupWizard(self)
 
     def set_status(self, status_string):
+        """
+        Displays a status message for 2 seconds in the status bar.
+        """
         self.root_window.statusbar.showMessage(status_string, 2000)
 
 
@@ -479,7 +541,7 @@ class ManageBases:
         self.menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Bases.ui"), self.gui.root_window)
         self.gui.root_window.setCentralWidget(self.menu)
         self.model = QtGui.QStandardItemModel()
-        base_data = H3Core.read_table(Acd.WorkBase, "local")
+        base_data = AlchemyCore.read_table(Acd.WorkBase)
 
         tree_row = list()
         next_row = list()
@@ -530,7 +592,7 @@ class ManageBases:
             self.menu.userno.setText("-")
         elif base_index.data(33):
             self.menu.opendate.setText(base_index.data(33).opened_date)
-            count = H3Core.get_user_count(base_index.data(33).code)
+            count = AlchemyCore.get_user_count(base_index.data(33).code)
             if count:
                 self.menu.userno.setText(count)
             else:
@@ -540,7 +602,7 @@ class ManageBases:
         selected_base = self.base_selection_model.currentIndex().data(33)
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
-        base_data = H3Core.read_table(Acd.WorkBase, "local")
+        base_data = AlchemyCore.read_table(Acd.WorkBase)
         bases_list = list()
 
         for record in base_data:
@@ -571,8 +633,8 @@ def run():
 
 
 def init_remote(location, password):
-    H3Core.init_remote(location, password)
+    init_remote(location, password)
 
 
 def nuke_remote(location, password):
-    H3Core.nuke_remote(location, password)
+    nuke_remote(location, password)

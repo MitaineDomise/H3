@@ -235,7 +235,7 @@ class SyncJournal(Base):
     type = sqlalchemy.Column(sqlalchemy.String)  # Create / Update / Delete
     table = sqlalchemy.Column(sqlalchemy.String)  # ie "bases"
     key = sqlalchemy.Column(sqlalchemy.String)  # PK of the sync entry
-    status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Rejected
+    status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified / Rejected
 
     local_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
     processed_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
