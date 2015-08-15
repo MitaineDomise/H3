@@ -123,42 +123,9 @@ class Action(Base):
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     title = sqlalchemy.Column(sqlalchemy.String)  # ie manage_bases
-    language = sqlalchemy.Column(sqlalchemy.String)  # For localization !
+    language = sqlalchemy.Column(sqlalchemy.String)  # For localization
     category = sqlalchemy.Column(sqlalchemy.String)  # ie "Stocks management"
     description = sqlalchemy.Column(sqlalchemy.String)
-
-
-class ContractAction(Base):
-    """
-    Class linking a given contract to the actions they can perform.
-    Scope and Maximum hold the limits of this action
-    for example project XX with maximum sign-off USD5000
-    Not versioned, as part of the job contract, which shouldn't change.
-    """
-    __tablename__ = 'contract_actions'
-
-    prefix = 'CONTRACTACTION'
-
-    code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
-    serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, nullable=False)
-    period = sqlalchemy.Column(sqlalchemy.String,
-                               nullable=False,
-                               default=datetime.date.today().year)
-
-    contract = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
-    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
-    scope = sqlalchemy.Column(sqlalchemy.String)  # ie (list of) contracts, bases, or projects
-    maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
-
-    contract_fk = sqlalchemy.orm.relationship('JobContract',
-                                              backref=sqlalchemy.orm.backref('contract_actions',
-                                                                             cascade="all, delete-orphan"),
-                                              foreign_keys=contract)
-    action_fk = sqlalchemy.orm.relationship('Action',
-                                            backref=sqlalchemy.orm.backref('contract_actions',
-                                                                           cascade="all, delete-orphan"),
-                                            foreign_keys=action)
 
 
 class Job(Base):
@@ -180,16 +147,16 @@ class Job(Base):
     category = sqlalchemy.Column(sqlalchemy.String)  # ie FP
 
 
-class Delegation(Base):
+class AssignedAction(Base):
     """
-    Class holding the actions that have been granted from one contract to another.
+    Class holding the actions that have been granted to a contract, delegated or not.
     Scope and Maximum hold the limits of this action
     for example project XX with maximum sign-off USD5000
     Not versioned, as further delegations can be granted as needed.
     """
-    __tablename__ = 'delegations'
+    __tablename__ = 'assignedactions'
 
-    prefix = 'DELEGATION'
+    prefix = 'ASSIGNEDACTION'
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
@@ -198,22 +165,25 @@ class Delegation(Base):
                                nullable=False,
                                default=datetime.date.today().year)
 
-    start_date = sqlalchemy.Column(sqlalchemy.Date)
-    end_date = sqlalchemy.Column(sqlalchemy.Date)
+    start_date = sqlalchemy.Column(sqlalchemy.Date, default=None)
+    end_date = sqlalchemy.Column(sqlalchemy.Date, default=None)
+    # A Job contract. Not a FK because local may not know it.
+    delegated_from = sqlalchemy.Column(sqlalchemy.String, default=None)
+
     action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
-    delegated_from = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
-    delegated_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
+    assigned_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
     scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
     maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
 
-    delegator_fk = sqlalchemy.orm.relationship('JobContract',
-                                               backref=sqlalchemy.orm.backref('delegations_out',
-                                                                              cascade="all, delete-orphan"),
-                                               foreign_keys=delegated_from)
-    delegatee_fk = sqlalchemy.orm.relationship('JobContract',
-                                               backref=sqlalchemy.orm.backref('delegations_in',
-                                                                              cascade="all, delete-orphan"),
-                                               foreign_keys=delegated_to)
+    job_contract_fk = sqlalchemy.orm.relationship('JobContract',
+                                                  backref=sqlalchemy.orm.backref('assigned_actions',
+                                                                                 cascade="all, delete-orphan"),
+                                                  foreign_keys=assigned_to)
+
+    action_fk = sqlalchemy.orm.relationship('Actions',
+                                            backref=sqlalchemy.orm.backref('assigned_actions',
+                                                                           cascade="all, delete-orphan"),
+                                            foreign_keys=action)
 
 
 class SyncJournal(Base):
@@ -229,25 +199,16 @@ class SyncJournal(Base):
 
     serial = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)  # negative for local entries
 
-    origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
-    target_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
+    # A Job contract. Not a FK because local may not know it.
+    origin = sqlalchemy.Column(sqlalchemy.String)
 
     type = sqlalchemy.Column(sqlalchemy.String)  # Create / Update / Delete
     table = sqlalchemy.Column(sqlalchemy.String)  # ie "bases"
     key = sqlalchemy.Column(sqlalchemy.String)  # PK of the sync entry
-    status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified / Rejected
+    status = sqlalchemy.Column(sqlalchemy.String)  # Unsubmitted / Accepted / Modified
 
     local_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
     processed_timestamp = sqlalchemy.Column(sqlalchemy.DateTime)
-
-    sync_origin_jc_fk = sqlalchemy.orm.relationship('JobContract',
-                                                    backref=sqlalchemy.orm.backref('journal_entries_out',
-                                                                                   cascade="all, delete-orphan"),
-                                                    foreign_keys=origin_jc)
-    sync_target_jc_fk = sqlalchemy.orm.relationship('JobContract',
-                                                    backref=sqlalchemy.orm.backref('journal_entries_in',
-                                                                                   cascade="all, delete-orphan"),
-                                                    foreign_keys=target_jc)
 
 
 class Message(Base):

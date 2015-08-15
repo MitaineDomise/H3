@@ -1,6 +1,5 @@
 __author__ = 'Man'
 
-import datetime
 import logging
 import hashlib
 
@@ -88,11 +87,11 @@ def has_a_base(session):
 
 def get_sync_queue(session):
     try:
-        updates = session.query(Acd.SyncJournal) \
+        entries = session.query(Acd.SyncJournal) \
             .filter(Acd.SyncJournal.serial < 0) \
             .order_by(Acd.SyncJournal.serial.desc()) \
             .all()
-        return updates
+        return entries
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception((_("Error while getting the unsubmitted sync entries")))
 
@@ -101,6 +100,7 @@ def get_highest_serial(session, mapped_class, work_base='GLOBAL'):
     try:
         max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
             .filter(mapped_class.base == work_base) \
+            .filter(mapped_class.code.notlike('TMP-%')) \
             .one()
         logger.debug(_("Highest serial for class {mapped} in local is {no}")
                      .format(mapped=mapped_class, no=max_num.max))
@@ -141,36 +141,6 @@ def get_action_description(session, action_id, lang):
         session.close()
 
 
-def get_current_delegations(session, job_contract):
-    try:
-        delegations = session.query(Acd.Delegation) \
-            .filter(Acd.Delegation.delegated_to == job_contract.code) \
-            .filter(Acd.Delegation.start_date <= datetime.date.today(),
-                    Acd.Delegation.end_date >= datetime.date.today()) \
-            .all()
-        return delegations
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Unable to query DB for delegations given to contract {id}")
-                         .format(id=job_contract.code))
-        return False
-    finally:
-        session.close()
-
-
-def get_contract_actions(session, job_contract):
-    try:
-        actions = session.query(Acd.ContractAction) \
-            .filter(Acd.ContractAction.contract == job_contract.code) \
-            .all()
-        return actions
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Unable to query DB for actions linked to contract {id}")
-                         .format(id=job_contract.code))
-        return False
-    finally:
-        session.close()
-
-
 def login(session, username, password):
     """
     App-level login.
@@ -180,13 +150,13 @@ def login(session, username, password):
     """
     hashed_pass = hashlib.md5((password + username).encode(encoding='ascii')).hexdigest()
     try:
-        session.query(Acd.User) \
+        user = session.query(Acd.User) \
             .filter(Acd.User.login == username,
                     Acd.User.pw_hash == hashed_pass) \
             .one()
         logger.debug(_("Successfully logged in with the pair {user} / {password}")
                      .format(user=username, password=hashed_pass))
-        return True
+        return user
     except sqlalchemy.orm.exc.NoResultFound:
         logger.debug(_("No matching pair for {user} / {password}")
                      .format(user=username, password=hashed_pass))

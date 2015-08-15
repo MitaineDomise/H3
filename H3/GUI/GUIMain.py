@@ -68,22 +68,29 @@ class SetupWizard:
         self.wizard.searchButton.clicked.connect(self.check_user)
 
         self.wizard.accepted.connect(self.connect_and_sync)
-        # TODO: should have some kind of progress bar / animation
         if self.wizard.exec_() == QtGui.QDialog.Rejected and not H3Core.wizard_system_ready():
             sys.exit()
 
     def connect_and_sync(self):
         """
-        At the end of the wizard, login to the remote database with the user's credentials
-        and start processing the whole sync journal
+        At the end of the wizard, depending on state, take the following action:
+         - no such user or user with no job : exit
+         - user waiting for creation : update password
+         - new user and / or base data gets downloaded
+         - A downward sync happens (including for local users)
         :return:
         """
-        # TODO: batch download the tables in a more efficient manner
         username = self.wizard.usernameLineEdit.text()
         password = self.wizard.passwordLineEdit.text()
         H3Core.local_login(username, password)
-        H3Core.remote_login(username, password)
-        AlchemyCore.download_public_tables()
+        if H3Core.internal_state["user"] == "no_job" or "invalid":
+            sys.exit()
+        elif H3Core.internal_state["user"] == "new":
+            H3Core.remote_pw_change(username, username + "YOUPIE", password)
+            H3Core.internal_state["user"] = "remote"
+        elif H3Core.internal_state["user"] == "remote":
+            H3Core.remote_login(username, password)
+        H3Core.initial_setup()
         H3Core.sync_down()
 
     def check_user(self):
@@ -92,7 +99,6 @@ class SetupWizard:
         The core will also check for cases like having no job or a job on a different base
         :return:
         """
-        # TODO: Move the check_xxx routines to the wizard pages
         username = self.wizard.usernameLineEdit.text()
         # noinspection PyUnusedLocal
         temp_user_ok = self.wizard.user_ok
@@ -101,19 +107,19 @@ class SetupWizard:
         else:
             H3Core.wizard_find_user(username)
 
-        if H3Core.user_state == "local":
+        if H3Core.internal_state["user"] == "local":
             self.wizard.userStatusLabel.setText(_("User {login} already recorded locally, you can proceed !")
                                                 .format(login=username))
             temp_user_ok = True
             self.wizard.pw_ok = True
-        elif H3Core.user_state == "remote" or H3Core.user_state == "new_base":
+        elif H3Core.internal_state["user"] == "remote":
             self.wizard.passwordLineEdit.show()
             self.wizard.passwordLabel.show()
             self.wizard.passwordLineEdit.textChanged.connect(self.check_pws)
             self.wizard.userStatusLabel.setText(_("User {login} found in remote, please enter password")
                                                 .format(login=username))
             temp_user_ok = True
-        elif H3Core.user_state == "new":
+        elif H3Core.internal_state["user"] == "new":
             self.wizard.passwordLineEdit.show()
             self.wizard.passwordLabel.show()
             self.wizard.confirmPasswordLineEdit.show()
@@ -123,12 +129,12 @@ class SetupWizard:
             self.wizard.userStatusLabel.setText(_("User {login} ready for creation, please enter password")
                                                 .format(login=username))
             temp_user_ok = True
-        elif H3Core.user_state == "no_job":
+        elif H3Core.internal_state["user"] == "no_job":
             temp_user_ok = False
             self.wizard.userStatusLabel.setText(_("User {login} has no current contract. "
                                                   "Please contact your focal point")
                                                 .format(login=username))
-        elif H3Core.user_state == "invalid":
+        elif H3Core.internal_state["user"] == "invalid":
             temp_user_ok = False
             self.wizard.userStatusLabel.setText(_("User {login} not found. Please contact your focal point.")
                                                 .format(login=username))
@@ -145,7 +151,7 @@ class SetupWizard:
         temp_pw_ok = self.wizard.pw_ok
         pw1 = self.wizard.passwordLineEdit.text()
         pw2 = self.wizard.confirmPasswordLineEdit.text()
-        if H3Core.user_state == "new":
+        if H3Core.internal_state["user"] == "new":
             if len(pw1) > 5:
                 if pw1 == pw2:
                     temp_pw_ok = True
@@ -156,7 +162,7 @@ class SetupWizard:
             else:
                 temp_pw_ok = False
                 self.wizard.passwordStatusLabel.setText(_("Password too short (minimum 6 characters)"))
-        elif H3Core.user_state == "remote" or H3Core.user_state == "new_base":
+        elif H3Core.internal_state["user"] == "remote":
             if len(pw1) > 5:
                 temp_pw_ok = True
                 self.wizard.passwordStatusLabel.setText(_(" "))
@@ -293,7 +299,6 @@ class RecapWizardPage(QtGui.QWizardPage):
         super(RecapWizardPage, self).__init__(parent)
 
     def initializePage(self, *args, **kwargs):
-        # H3Core.wizard_user_details(self.wizard().usernameLineEdit.text())  # details already pulled on finding user
 
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
@@ -302,7 +307,7 @@ class RecapWizardPage(QtGui.QWizardPage):
         self.wizard().nameRecap.setText(_("{first} {last}")
                                         .format(first=user.first_name, last=user.last_name))
 
-        if H3Core.user_state == "no_job":
+        if H3Core.internal_state["user"] == "no_job":
             self.wizard().jobRecap.setText(_("No current contract"))
             self.wizard().baseRecap.setText(_("No current posting"))
             self.wizard().userActionRecap.setText(_("The user profile can not be used in H3"
@@ -313,18 +318,18 @@ class RecapWizardPage(QtGui.QWizardPage):
             self.wizard().baseRecap.setText(_("{id} - {fullname}")
                                             .format(id=base.identifier, fullname=base.full_name))
 
-            if H3Core.user_state == "local":
+            if H3Core.internal_state["user"] == "local":
                 self.wizard().userActionRecap.setText(_("The user profile was already set up in the local database."
                                                         "This wizard will only update the user info."))
-            elif H3Core.user_state == "remote":
+            elif H3Core.internal_state["user"] == "remote":
                 self.wizard().userActionRecap.setText(_("The user profile will be downloaded into the local database. "
                                                         "You can then login. Welcome back to H3 !"))
-            elif H3Core.user_state == "new" or H3Core.user_state == "new_base":
+            elif H3Core.internal_state["user"] == "new":
                 self.wizard().userActionRecap.setText(_("The user profile will be initialized and downloaded into the"
                                                         " local database. Welcome to H3 !"))
-
+            if H3Core.internal_state["base" == "new"]:
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
-                                                _("H3 will now download the data for the office your new user is "
+                                                _("H3 will now download the data for the office this user is "
                                                   "affected to. If this is not a new H3 installation, "
                                                   "please consider deleting and rebuilding your local Database file, "
                                                   "or use the administrative options in H3 to remove old data."),
@@ -357,7 +362,8 @@ class LoginBox:
         self.login_attempts = 0
 
         if H3Core.current_job_contract:
-            self.login_box.loginLineEdit.setText(H3Core.current_job_contract.user)
+            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+            self.login_box.loginLineEdit.setText(user.login)
 
         self.login_box.pushButton.clicked.connect(self.login_clicked)
         self.login_box.new_user_pushButton.clicked.connect(self.gui.run_setup_wizard)
@@ -374,27 +380,28 @@ class LoginBox:
             username = self.login_box.loginLineEdit.text()
             password = self.login_box.passwordLineEdit.text()
             H3Core.local_login(username, password)
-            if H3Core.user_state == "ok":
+            H3Core.update_user_status(username)
+            if H3Core.internal_state["user"] == "ok":
                 self.login_box.accept()
                 self.gui.set_status(_("Successfully logged in as %(name)s") % {"name": username})
-            elif H3Core.user_state == "new_base":
-                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
-                                                _("This user is currently affected to a base that is not present in"
-                                                  " the local database. Maybe the user got promoted to a new base, "
-                                                  "or this is H3 installation is old. Please run the setup wizard."),
-                                                QtGui.QMessageBox.Ok)
-                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
-                message_box.exec_()
-            elif H3Core.user_state == "no_job":
+            elif H3Core.internal_state["user"] == "no_job":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("No active job contract"),
                                                 _("This user is currently not employed according to the local "
                                                   "H3 database; Please contact your focal point if this is wrong."),
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
-            elif H3Core.user_state == "nok":
+            elif H3Core.internal_state["user"] == "nok":
                 self.login_attempts += 1
                 self.gui.set_status("login failed, " + str((5 - self.login_attempts)) + " remaining")
+            if H3Core.internal_state["base"] == "new":
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
+                                                _("This user is currently affected to a base that is not present in"
+                                                  " the local database. The user may have been promoted to a new base, "
+                                                  "or this is H3 installation is old. Please run the setup wizard."),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
         else:
             self.login_box.reject()
 
@@ -419,8 +426,6 @@ class H3MainGUI:
         self.root_window.setGeometry(rect2)
 
         self.root_window.show()
-
-        # TODO : Have Status bar watch the log file for messages (store in a tablemodel)+"local DB Accessible" indicator
 
         while not H3Core.wizard_system_ready():
             self.run_setup_wizard()
@@ -455,35 +460,27 @@ class H3MainGUI:
         Collects the actions the current user can execute and builds
         a custom menu out of them.
         """
-        H3Core.get_actions()
+        H3Core.update_assigned_actions()
         model = QtGui.QStandardItemModel()
 
         categories = set()
         action_items = list()
 
-        for contract_action in H3Core.contract_actions:
-            desc = H3Core.get_action_description(contract_action.action)
+        for assigned_action in H3Core.assigned_actions:
+            desc = AlchemyCore.get_action_description(assigned_action.action, H3Core.language)
             categories.add(desc.category)
             item = QtGui.QStandardItem(desc.description)
-            item.setData(contract_action, 33)
+            item.setData(assigned_action, 33)
             item.setData(desc, 34)
             item.setStatusTip(desc.description)
-            action_items.append(item)
-
-        for delegation in H3Core.delegations:
-            desc = H3Core.get_action_description(delegation.action)
-            categories.add(desc.category)
-            item = QtGui.QStandardItem(desc.description)
-            item.setData(delegation, 33)
-            item.setData(desc, 34)
-            item.setStatusTip(desc.description)
-            tooltip = _("Delegated until : {end}.").format(end=delegation.end_date)
-            if delegation.scope != 'all':
-                tooltip.append(_("\nScope :  {sc}").format(sc=delegation.scope))
-            if delegation.maximum != -1:
-                tooltip.append(_("\nLimit :  {lim}").format(lim=delegation.maximum))
-            item.setToolTip(tooltip)
-            item.setBackground(QtGui.QBrush(QtCore.Qt.green))
+            if assigned_action.delegated_from:
+                tooltip = _("Delegated until : {end}.").format(end=assigned_action.end_date)
+                if assigned_action.scope != 'all':
+                    tooltip.append(_("\nScope :  {sc}").format(sc=assigned_action.scope))
+                if assigned_action.maximum != -1:
+                    tooltip.append(_("\nLimit :  {lim}").format(lim=assigned_action.maximum))
+                item.setToolTip(tooltip)
+                item.setBackground(QtGui.QBrush(QtCore.Qt.green))
             action_items.append(item)
 
         cat2 = sorted(categories)

@@ -12,9 +12,6 @@ import sqlalchemy.engine.url
 
 from . import AlchemyClassDefs as Acd
 
-
-# from .AlchemyTemporal import versioned_session
-
 logger = logging.getLogger(__name__)
 
 
@@ -319,12 +316,12 @@ class H3AlchemyRemoteDB:
                               description="Manage job contracts")
         root_a_5 = Acd.Action(code='ACTION-5',
                               serial=5,
-                              title='manage_contract_actions',
+                              title='manage_assigned_actions',
                               language="EN_UK",
                               category="Logistics",
-                              description="Manage contract actions")
+                              description="Manage assigned actions")
 
-        root_c_a_1 = Acd.ContractAction(code='ROOT-CONTRACTACTION-1900-1',
+        root_c_a_1 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-1',
                                         serial=1,
                                         base="ROOT",
                                         contract='ROOT-JOBCONTRACT-1900-1',
@@ -332,7 +329,7 @@ class H3AlchemyRemoteDB:
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_2 = Acd.ContractAction(code='ROOT-CONTRACTACTION-1900-2',
+        root_c_a_2 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-2',
                                         serial=2,
                                         base="ROOT",
                                         contract='ROOT-JOBCONTRACT-1900-1',
@@ -340,7 +337,7 @@ class H3AlchemyRemoteDB:
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_3 = Acd.ContractAction(code='ROOT-CONTRACTACTION-1900-3',
+        root_c_a_3 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-3',
                                         serial=3,
                                         base="ROOT",
                                         contract='ROOT-JOBCONTRACT-1900-1',
@@ -348,7 +345,7 @@ class H3AlchemyRemoteDB:
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_4 = Acd.ContractAction(code='ROOT-CONTRACTACTION-1900-4',
+        root_c_a_4 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-4',
                                         serial=4,
                                         base="ROOT",
                                         contract='ROOT-JOBCONTRACT-1900-1',
@@ -356,16 +353,16 @@ class H3AlchemyRemoteDB:
                                         scope='all',
                                         maximum=-1)
 
-        root_delegation = Acd.Delegation(code='ROOT-DELEGATION-1900-1',
-                                         serial=1,
-                                         base="ROOT",
-                                         start_date=datetime.date.today(),
-                                         end_date=datetime.date(3000, 6, 6),
-                                         action='ACTION-5',
-                                         delegated_from='JOBCONTRACT-1',
-                                         delegated_to='ROOT-JOBCONTRACT-1900-1',
-                                         scope='all',
-                                         maximum=-1)
+        root_delegation = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-5',
+                                             serial=5,
+                                             base="ROOT",
+                                             start_date=datetime.date(1900, 1, 1),
+                                             end_date=datetime.date(3000, 6, 6),
+                                             action='ACTION-5',
+                                             delegated_from='JOBCONTRACT-1',
+                                             delegated_to='ROOT-JOBCONTRACT-1900-1',
+                                             scope='all',
+                                             maximum=-1)
 
         initial_sync_entry = Acd.SyncJournal(origin_jc='JOBCONTRACT-1',
                                              target_jc='ROOT-JOBCONTRACT-1900-1',
@@ -476,28 +473,6 @@ class H3AlchemyRemoteDB:
             return False
 
 
-# TODO : actually use this
-def get_career(session, username):
-    """
-    Get the list of jobs for a user.
-    :param username: user login to query
-    :return:
-    """
-    try:
-        jobs = session.query(Acd.JobContract) \
-            .filter(Acd.JobContract.user == username) \
-            .order_by(Acd.JobContract.start_date) \
-            .all()
-        if jobs:
-            return jobs
-        else:
-            logger.info(_("No current contract."))
-            return None
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.error(_("Error querying DB for user {user}'s career")
-                     .format(user=username))
-
-
 def user_count(session, base_code):
     try:
         return session.query(Acd.JobContract) \
@@ -508,20 +483,72 @@ def user_count(session, base_code):
         return False
 
 
-def get_updates(session, first_serial, bases_list):
-    """
-    Extract sync journal entries targeted to any of the bases the user sees.
-    Actions / Delegations will be caught by this.
+def get_updates(session, first_serial, job_contract, bases_list):
+    """Extract sync journal entries of interest to our user.
+
+    :param session: A session object targeted (bound) to the remote DB
+    :param job_contract: The user's job contract, point of reference
     :param first_serial: the last update we don't need (excluded floor value)
-    :param bases_list: the base visibility, for which we request updates
-    :return:
+    :param bases_list: the base visibility, for which we request updates. Includes GLOBAL
+    :return: a list of sync entries and a list of various records
+    :rtype : list, list
     """
     try:
-        updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.serial > first_serial) \
-            .filter(Acd.SyncJournal.target_jc.in_(session.query(Acd.JobContract.code)
-                                                  .filter(Acd.JobContract.work_base.in_(bases_list)))) \
+        entries = list()
+        records = list()
+
+        base_updates = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.table == 'bases', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
+            .filter(Acd.WorkBase.in_(bases_list)) \
             .all()
-        return updates
+
+        for entry, record in base_updates:
+            entries.append(entry)
+            records.append(record)
+
+        job_updates = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
+            .filter(Acd.Job.code == job_contract.job_code) \
+            .all()
+
+        for entry, record in job_updates:
+            entries.append(entry)
+            records.append(record)
+
+        user_updates = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
+            .filter(Acd.User.code == job_contract.user) \
+            .all()
+
+        for entry, record in user_updates:
+            entries.append(entry)
+            records.append(record)
+
+        jc_updates = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
+            .filter(Acd.JobContract.code == job_contract.code) \
+            .all()
+
+        for entry, record in jc_updates:
+            entries.append(entry)
+            records.append(record)
+
+        action_updates = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
+            .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
+            .join(Acd.Action, Acd.Action.code == Acd.AssignedAction.action) \
+            .all()
+
+        for entry, assigned_action_record, action_record in action_updates:
+            entries.append(entry)
+            records.append(action_record)
+            records.append(assigned_action_record)
+
+        return entries, records
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Failed to download updates"))

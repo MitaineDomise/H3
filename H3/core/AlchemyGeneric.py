@@ -1,4 +1,4 @@
-__author__ = 'Emmanuel'
+__author__ = 'Man'
 
 import logging
 import datetime
@@ -126,6 +126,16 @@ def merge(session, record):
         return "err", timestamp
 
 
+def merge_multiple(session, records):
+    try:
+        for record in records:
+            session.merge(record)
+        return True
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Bulk merge failed on this record list : {list}")
+                         .format(list=records))
+
+
 def delete(session, record):
     """
     deletes a record from the local db
@@ -178,3 +188,18 @@ def get_highest_synced_sync_entry(session):
         return 0
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Error while getting the newest synced sync entry"))
+
+
+def get_assigned_actions(session, job_contract):
+    try:
+        actions = session.query(Acd.AssignedAction) \
+            .join(Acd.Action) \
+            .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
+            .all()
+        return actions
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Unable to query DB for actions linked to contract {id}")
+                         .format(id=job_contract.code))
+        return False
+    finally:
+        session.close()
