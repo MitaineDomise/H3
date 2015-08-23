@@ -186,12 +186,13 @@ class H3AlchemyCore:
         """
         local_session = SessionLocal()
         logged_user = AlchemyLocal.login(local_session, username, password)
-        local_session.close()
         if logged_user:
             self.update_user_status(logged_user)
-            self.extract_current_serials()
+            self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
+            self.extract_current_serials(local_session)
         else:
             self.internal_state["user"] = "nok"
+        local_session.close()
 
     def remote_login(self, username, password):
         """
@@ -340,10 +341,12 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
+        remote_session = SessionRemote()
+        self.extract_current_serials(remote_session)
+        remote_session.close()
         entries = AlchemyLocal.get_sync_queue(local_session)
 
         if entries:
-            self.extract_current_serials()
             serials = self.serials.copy()
 
             for entry in entries:
@@ -380,24 +383,20 @@ class H3AlchemyCore:
             local_session.commit()
         local_session.close()
 
-    def extract_current_serials(self):
+    def extract_current_serials(self, session):
         """
         At login, populates the dict of dicts keeping track of the current highest serial for all transactions
         :return:
         """
         self.serials = dict()
-        self.queue_cursor = 0
 
-        local_session = SessionLocal()
-        self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
         for table in Acd.Base.metadata.tables:
             if table != "journal_entries":
                 self.serials.update({table: dict()})
                 mapped_class = get_class_by_table_name(table)
                 for base in self.base_visibility:
-                    highest = AlchemyLocal.get_highest_serial(local_session, mapped_class, base)
+                    highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base)
                     self.serials[table].update({base: highest})
-        local_session.close()
 
     def sync_down(self):
         """

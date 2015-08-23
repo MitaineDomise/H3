@@ -96,23 +96,6 @@ def get_sync_queue(session):
         logger.exception((_("Error while getting the unsubmitted sync entries")))
 
 
-def get_highest_serial(session, mapped_class, work_base='GLOBAL'):
-    try:
-        max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
-            .filter(mapped_class.base == work_base) \
-            .filter(mapped_class.code.notlike('TMP-%')) \
-            .one()
-        logger.debug(_("Highest serial for class {mapped} in local is {no}")
-                     .format(mapped=mapped_class, no=max_num.max))
-        return max_num.max if max_num.max else 0
-    except sqlalchemy.orm.exc.NoResultFound:
-        logger.info(_("No entries for this class, serial defaulted to 0"))
-        return 0
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Error getting the highest serial for class {cls}")
-                         .format(cls=mapped_class))
-
-
 def get_lowest_queued_sync_entry(session):
     try:
         min_num = session.query(sqlalchemy.func.min(Acd.SyncJournal.serial).label('min')) \
