@@ -30,8 +30,12 @@ class H3AlchemyCore:
 
         self.internal_state = dict({"user": "", "base": ""})
 
+        self.current_job_contract = Acd.JobContract()
         self.current_job_contract = None
-        self.base_visibility = []
+
+        self.local_bases = list()
+        self.local_users = list()
+
         self.assigned_actions = list()
 
         self.serials = dict()
@@ -67,6 +71,8 @@ class H3AlchemyCore:
                         local_session = SessionLocal()
                         user = AlchemyGeneric.get_user_from_login(local_session, username)
                         self.current_job_contract = AlchemyGeneric.get_current_job_contract(local_session, user)
+                        self.local_bases = AlchemyLocal.get_local_bases(local_session)
+                        self.local_users = AlchemyLocal.get_local_users(local_session)
                         local_session.close()
                         if self.current_job_contract:
                             return True
@@ -146,8 +152,8 @@ class H3AlchemyCore:
     def initial_setup(self):
         """
 
-        If this is a new user, download the user, job and base then their current JC.
         If this is a new base, download the relevant records from base-specific tables.
+        If this is a new user, download the user and job and then their current JC.
 
         :return:
         """
@@ -159,16 +165,13 @@ class H3AlchemyCore:
         if self.internal_state["user"] == "ok":
             pass
         else:
-            if self.internal_state["user"] == "remote":
-                records.append(build_user_pack(remote_session, self.current_job_contract, self.base_visibility))
-
             if self.internal_state["base"] == "new":
-                records.append(build_base_pack(remote_session, self.current_job_contract, self.base_visibility))
+                new_bases = AlchemyGeneric.update_base_visibility(remote_session, self.current_job_contract.base)
+                for base in new_bases:
+                    records.append(build_base_pack(remote_session, base))
 
-                # base_users =
-                # base_jcs =
-                pass
-                # Get base-specific stuff (but not job_contracts as we're not sure of having their users
+            if self.internal_state["user"] == "remote":
+                records.append(build_user_pack(remote_session, self.current_job_contract))
 
         latest_sync_serial = AlchemyGeneric.get_highest_synced_sync_entry(remote_session)
         latest_sync_entry = AlchemyGeneric.get_from_primary_key(remote_session, Acd.SyncJournal, latest_sync_serial)
@@ -248,9 +251,9 @@ class H3AlchemyCore:
         self.current_job_contract = AlchemyGeneric.get_current_job_contract(local_session, user)
 
         if self.current_job_contract:
-            self.update_base_visibility(self.current_job_contract.work_base)
-            local_bases_list = AlchemyLocal.get_local_bases(local_session)
-            if self.current_job_contract.work_base not in local_bases_list:
+            self.local_bases = AlchemyLocal.get_local_bases(local_session)
+            if self.current_job_contract.work_base not in self.local_bases:
+                # TODO : impossible because of the workbase FK; figure out what happens when JC changes to a new base
                 logger.error(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
                              .format(name=user.login, base=self.current_job_contract.work_base))
                 self.internal_state["base"] = "new"
@@ -263,29 +266,6 @@ class H3AlchemyCore:
         local_session.close()
 
         self.options.write(open('config.txt', 'w'))
-
-    def update_base_visibility(self, root_base_pkey):
-        """
-        Queries local database for the organisational tree, then walks it to extract a list of sub-bases
-        :param root_base_pkey: root of the extracted subtree
-        """
-        local_session = SessionLocal()
-        org_table = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
-        local_session.close()
-        self.base_visibility = []
-        self.base_visibility.append(root_base_pkey)
-        tree_row = [root_base_pkey]
-        next_row = list()
-        while tree_row:
-            for base in tree_row:
-                for record in org_table:
-                    if record.parent == base:
-                        if record.parent != record.code:
-                            next_row.append(record.code)
-                            self.base_visibility.append(record.code)
-            tree_row = next_row
-            next_row = list()
-        self.base_visibility.append('BASE-1')
 
     def update_assigned_actions(self):
         local_session = SessionLocal()
@@ -394,7 +374,7 @@ class H3AlchemyCore:
             if table != "journal_entries":
                 self.serials.update({table: dict()})
                 mapped_class = get_class_by_table_name(table)
-                for base in self.base_visibility:
+                for base in self.local_bases:
                     highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base)
                     self.serials[table].update({base: highest})
 
@@ -410,8 +390,8 @@ class H3AlchemyCore:
         remote_session = SessionRemote()
         entries, records = AlchemyRemote.get_updates(remote_session,
                                                      current_cursor,
-                                                     self.current_job_contract,
-                                                     self.base_visibility)
+                                                     self.local_bases,
+                                                     self.local_users)
         remote_session.close()
 
         if entries and records:
@@ -549,7 +529,7 @@ def ping_local(location):
     :param location:
     :return:
     """
-    # TODO: check that file creation works / change detection of absent file through IOError
+    # TODO: check that file creation works / change detection of absent file through IOError. OS.access is the one
     if location == "":
         return 0  # open() doesn't error out on an empty filename
     try:
@@ -639,6 +619,7 @@ def build_key(record, mapped_class):
     :param mapped_class:
     :return:
     """
+    # TODO : why can't I have a real FK in the base field again ??
     base = record.base.join("-") if record.base != 'GLOBAL' else ''
     period = record.period.join("-") if record.period != 'PERMANENT' else ''
     code = "{base}{prefix}-{period}{serial}".format(base=base,
@@ -648,7 +629,7 @@ def build_key(record, mapped_class):
     return code
 
 
-def build_user_pack(session, job_contract, bases_list):
+def build_user_pack(session, job_contract):
     """
     Get everything related to a given job contract, to populate the local DB.
      - bases the user can see, most importantly the top one referenced in the JC
@@ -662,10 +643,6 @@ def build_user_pack(session, job_contract, bases_list):
     :return:
     """
     records = list()
-
-    for base in bases_list:
-        work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base)
-        records.append(work_base)
 
     # jc_branch = session.Query(Acd.JobContract,
     #                           Acd.WorkBase,
@@ -698,5 +675,10 @@ def build_user_pack(session, job_contract, bases_list):
     return records
 
 
-def build_base_pack(session, job_contract, bases_list):
-    pass
+def build_base_pack(session, base):
+    records = list()
+
+    work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base)
+    records.append(work_base)
+
+    return records

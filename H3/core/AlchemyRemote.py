@@ -483,12 +483,12 @@ def user_count(session, base_code):
         return False
 
 
-def get_updates(session, first_serial, job_contract, bases_list):
+def get_updates(session, first_serial, bases_list, job_contract_list):
     """Extract sync journal entries of interest to our user.
 
     :param session: A session object targeted (bound) to the remote DB
-    :param job_contract: The user's job contract, point of reference
     :param first_serial: the last update we don't need (excluded floor value)
+    :param job_contract_list: Locally-recorded job contracts to get updates for.
     :param bases_list: the base visibility, for which we request updates. Includes GLOBAL
     :return: a list of sync entries and a list of various records
     :rtype : list, list
@@ -497,58 +497,83 @@ def get_updates(session, first_serial, job_contract, bases_list):
         entries = list()
         records = list()
 
-        base_updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.table == 'bases', Acd.SyncJournal.serial > first_serial) \
-            .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
-            .filter(Acd.WorkBase.in_(bases_list)) \
-            .all()
+        for base in bases_list:
+            base_entries, base_records = base_updates(session, first_serial, base)
+            entries.extend(base_entries)
+            records.extend(base_records)
 
-        for entry, record in base_updates:
-            entries.append(entry)
-            records.append(record)
-
-        job_updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
-            .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
-            .filter(Acd.Job.code == job_contract.job_code) \
-            .all()
-
-        for entry, record in job_updates:
-            entries.append(entry)
-            records.append(record)
-
-        user_updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
-            .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
-            .filter(Acd.User.code == job_contract.user) \
-            .all()
-
-        for entry, record in user_updates:
-            entries.append(entry)
-            records.append(record)
-
-        jc_updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
-            .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
-            .filter(Acd.JobContract.code == job_contract.code) \
-            .all()
-
-        for entry, record in jc_updates:
-            entries.append(entry)
-            records.append(record)
-
-        action_updates = session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
-            .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
-            .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
-            .join(Acd.Action, Acd.Action.code == Acd.AssignedAction.action) \
-            .all()
-
-        for entry, assigned_action_record, action_record in action_updates:
-            entries.append(entry)
-            records.append(action_record)
-            records.append(assigned_action_record)
+        for job_contract in job_contract_list:
+            jc_entries, jc_records = individual_updates(session, first_serial, job_contract)
+            entries.extend(jc_entries)
+            records.extend(jc_records)
 
         return entries, records
+
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Failed to download updates"))
+
+
+def base_updates(session, first_serial, base):
+    entries = list()
+    records = list()
+
+    updates = session.query(Acd.SyncJournal) \
+        .filter(Acd.SyncJournal.table == 'bases', Acd.SyncJournal.serial > first_serial) \
+        .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
+        .filter(Acd.WorkBase.code == base) \
+        .all()
+
+    for entry, record in updates:
+        entries.append(entry)
+        records.append(record)
+
+    return entries, records
+
+
+def individual_updates(session, first_serial, job_contract):
+    entries = list()
+    records = list()
+
+    job_updates = session.query(Acd.SyncJournal) \
+        .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
+        .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
+        .filter(Acd.Job.code == job_contract.job_code) \
+        .all()
+
+    for entry, record in job_updates:
+        entries.append(entry)
+        records.append(record)
+
+    user_updates = session.query(Acd.SyncJournal) \
+        .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
+        .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
+        .filter(Acd.User.code == job_contract.user) \
+        .all()
+
+    for entry, record in user_updates:
+        entries.append(entry)
+        records.append(record)
+
+    jc_updates = session.query(Acd.SyncJournal) \
+        .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
+        .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
+        .filter(Acd.JobContract.code == job_contract.code) \
+        .all()
+
+    for entry, record in jc_updates:
+        entries.append(entry)
+        records.append(record)
+
+    action_updates = session.query(Acd.SyncJournal) \
+        .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
+        .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
+        .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
+        .join(Acd.Action, Acd.Action.code == Acd.AssignedAction.action) \
+        .all()
+
+    for entry, assigned_action_record, action_record in action_updates:
+        entries.append(entry)
+        records.append(action_record)
+        records.append(assigned_action_record)
+
+    return entries, records

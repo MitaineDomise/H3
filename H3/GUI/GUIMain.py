@@ -380,7 +380,6 @@ class LoginBox:
             username = self.login_box.loginLineEdit.text()
             password = self.login_box.passwordLineEdit.text()
             H3Core.local_login(username, password)
-            H3Core.update_user_status(username)
             if H3Core.internal_state["user"] == "ok":
                 self.login_box.accept()
                 self.gui.set_status(_("Successfully logged in as %(name)s") % {"name": username})

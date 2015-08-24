@@ -48,21 +48,31 @@ class H3AlchemyLocalDB:
             return False
 
 
+def get_local_users(session):
+    """
+    Queries the DB for job contracts, extracting the current bases
+    :return: list of bases
+    """
+    try:
+        users = session.query(Acd.User).all()
+        logger.debug(_("List of users in DB : {list}")
+                     .format(list=str(users)))
+        return users
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.warning(_("Unable to query Local DB for bases"))
+        return False
+
+
 def get_local_bases(session):
     """
     Queries the DB for job contracts, extracting the current bases
     :return: list of bases
     """
     try:
-        job_contracts = session.query(Acd.JobContract) \
-            .group_by(Acd.JobContract.work_base) \
-            .all()
-        unique_bases = list()
-        for job_contract in job_contracts:
-            unique_bases.append(job_contract.work_base)
+        bases = session.query(Acd.WorkBase).all()
         logger.debug(_("List of bases in DB : {list}")
-                     .format(list=str(unique_bases)))
-        return unique_bases
+                     .format(list=str(bases)))
+        return bases
     except sqlalchemy.exc.SQLAlchemyError:
         logger.warning(_("Unable to query Local DB for bases"))
         return False

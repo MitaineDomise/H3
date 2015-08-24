@@ -220,3 +220,25 @@ def get_highest_serial(session, mapped_class, work_base='GLOBAL'):
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Error getting the highest serial for class {cls}")
                          .format(cls=mapped_class))
+
+
+def update_base_visibility(session, root_base_pkey):
+    """
+    Queries local database for the organisational tree, then walks it to extract a list of sub-bases
+    :param root_base_pkey: root of the extracted subtree
+    """
+    org_table = read_table(session, Acd.WorkBase)
+    visible_bases = list()
+    visible_bases.append(root_base_pkey)
+    tree_row = [root_base_pkey]
+    next_row = list()
+    while tree_row:
+        for base in tree_row:
+            for record in org_table:
+                if record.parent == base:
+                    if record.parent != record.code:
+                        next_row.append(record.code)
+                        visible_bases.append(record.code)
+        tree_row = next_row
+        next_row = list()
+    visible_bases.append('BASE-1')
