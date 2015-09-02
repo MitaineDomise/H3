@@ -50,16 +50,16 @@ class H3AlchemyLocalDB:
 
 def get_local_users(session):
     """
-    Queries the DB for job contracts, extracting the current bases
+    Queries the DB for job contracts
     :return: list of bases
     """
     try:
-        users = session.query(Acd.User).all()
-        logger.debug(_("List of users in DB : {list}")
+        users = session.query(Acd.JobContract).all()
+        logger.debug(_("List of job contracts in DB : {list}")
                      .format(list=str(users)))
         return users
     except sqlalchemy.exc.SQLAlchemyError:
-        logger.warning(_("Unable to query Local DB for bases"))
+        logger.warning(_("Unable to query Local DB for job contracts"))
         return False
 
 

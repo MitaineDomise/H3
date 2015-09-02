@@ -55,7 +55,7 @@ class SetupWizard:
             self.check_remote()
 
         if H3Core.current_job_contract:
-            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
             self.wizard.usernameLineEdit.setText(user.login)
 
         self.wizard.browseButton.clicked.connect(self.browse)
@@ -82,8 +82,7 @@ class SetupWizard:
         """
         username = self.wizard.usernameLineEdit.text()
         password = self.wizard.passwordLineEdit.text()
-        H3Core.local_login(username, password)
-        if H3Core.internal_state["user"] == "no_job" or "invalid":
+        if H3Core.internal_state["user"] == ("no_job" or "invalid"):
             sys.exit()
         elif H3Core.internal_state["user"] == "new":
             H3Core.remote_pw_change(username, username + "YOUPIE", password)
@@ -327,7 +326,7 @@ class RecapWizardPage(QtGui.QWizardPage):
             elif H3Core.internal_state["user"] == "new":
                 self.wizard().userActionRecap.setText(_("The user profile will be initialized and downloaded into the"
                                                         " local database. Welcome to H3 !"))
-            if H3Core.internal_state["base" == "new"]:
+            if H3Core.internal_state["base"] == "new":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
                                                 _("H3 will now download the data for the office this user is "
                                                   "affected to. If this is not a new H3 installation, "
@@ -362,7 +361,7 @@ class LoginBox:
         self.login_attempts = 0
 
         if H3Core.current_job_contract:
-            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
             self.login_box.loginLineEdit.setText(user.login)
 
         self.login_box.pushButton.clicked.connect(self.login_clicked)
@@ -393,11 +392,11 @@ class LoginBox:
             elif H3Core.internal_state["user"] == "nok":
                 self.login_attempts += 1
                 self.gui.set_status("login failed, " + str((5 - self.login_attempts)) + " remaining")
-            if H3Core.internal_state["base"] == "new":
+            if H3Core.internal_state["base"] == "relocated":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
                                                 _("This user is currently affected to a base that is not present in"
                                                   " the local database. The user may have been promoted to a new base, "
-                                                  "or this is H3 installation is old. Please run the setup wizard."),
+                                                  "or this H3 installation is old. Please run the setup wizard."),
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
@@ -581,18 +580,17 @@ class ManageBases:
         # self.menu.deleteButton.clicked.connect(self.delete_box)
 
     @QtCore.Slot(int)
-    # TODO: figure out why this doesn't work !!
     def update_stats(self, base_index):
         if not base_index:
             self.menu.opendate.setText("-")
             self.menu.userno.setText("-")
         elif base_index.data(33):
-            self.menu.opendate.setText(base_index.data(33).opened_date)
+            self.menu.openDate.setText(str(base_index.data(33).opened_date))
             count = AlchemyCore.get_user_count(base_index.data(33).code)
             if count:
-                self.menu.userno.setText(count)
+                self.menu.userNo.setText(str(count))
             else:
-                self.menu.userno.setText(_("Data unavailable without a connection to the remote DB"))
+                self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base_box(self):
         selected_base = self.base_selection_model.currentIndex().data(33)
@@ -629,8 +627,8 @@ def run():
 
 
 def init_remote(location, password):
-    init_remote(location, password)
+    AlchemyCore.init_remote(location, password)
 
 
 def nuke_remote(location, password):
-    nuke_remote(location, password)
+    AlchemyCore.nuke_remote(location, password)

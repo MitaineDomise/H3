@@ -192,7 +192,7 @@ def get_highest_synced_sync_entry(session):
 
 def get_assigned_actions(session, job_contract):
     try:
-        actions = session.query(Acd.AssignedAction) \
+        actions = session.query(Acd.AssignedAction, Acd.Action) \
             .join(Acd.Action) \
             .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
             .all()
@@ -205,10 +205,10 @@ def get_assigned_actions(session, job_contract):
         session.close()
 
 
-def get_highest_serial(session, mapped_class, work_base='GLOBAL'):
+def get_highest_serial(session, mapped_class, base_code):
     try:
         max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
-            .filter(mapped_class.base == work_base) \
+            .filter(mapped_class.base == base_code) \
             .filter(mapped_class.code.notlike('TMP-%')) \
             .one()
         logger.debug(_("Highest serial for class {mapped} in local is {no}")
@@ -222,14 +222,14 @@ def get_highest_serial(session, mapped_class, work_base='GLOBAL'):
                          .format(cls=mapped_class))
 
 
-def update_base_visibility(session, root_base_pkey):
+def subtree(session, root_base_pkey):
     """
     Queries local database for the organisational tree, then walks it to extract a list of sub-bases
     :param root_base_pkey: root of the extracted subtree
     """
     org_table = read_table(session, Acd.WorkBase)
-    visible_bases = list()
-    visible_bases.append(root_base_pkey)
+    extracted_subtree = list()
+    extracted_subtree.append(root_base_pkey)
     tree_row = [root_base_pkey]
     next_row = list()
     while tree_row:
@@ -238,7 +238,7 @@ def update_base_visibility(session, root_base_pkey):
                 if record.parent == base:
                     if record.parent != record.code:
                         next_row.append(record.code)
-                        visible_bases.append(record.code)
+                        extracted_subtree.append(record.code)
         tree_row = next_row
         next_row = list()
-    visible_bases.append('BASE-1')
+    return extracted_subtree

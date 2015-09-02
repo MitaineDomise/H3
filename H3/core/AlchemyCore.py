@@ -34,7 +34,7 @@ class H3AlchemyCore:
         self.current_job_contract = None
 
         self.local_bases = list()
-        self.local_users = list()
+        self.local_job_contracts = list()
 
         self.assigned_actions = list()
 
@@ -72,7 +72,7 @@ class H3AlchemyCore:
                         user = AlchemyGeneric.get_user_from_login(local_session, username)
                         self.current_job_contract = AlchemyGeneric.get_current_job_contract(local_session, user)
                         self.local_bases = AlchemyLocal.get_local_bases(local_session)
-                        self.local_users = AlchemyLocal.get_local_users(local_session)
+                        self.local_job_contracts = AlchemyLocal.get_local_users(local_session)
                         local_session.close()
                         if self.current_job_contract:
                             return True
@@ -166,12 +166,11 @@ class H3AlchemyCore:
             pass
         else:
             if self.internal_state["base"] == "new":
-                new_bases = AlchemyGeneric.update_base_visibility(remote_session, self.current_job_contract.base)
-                for base in new_bases:
-                    records.append(build_base_pack(remote_session, base))
+                # TODO: Just adding the top base. Others can be added in through admin tools.
+                records.extend(build_base_pack(remote_session, self.current_job_contract.work_base))
 
             if self.internal_state["user"] == "remote":
-                records.append(build_user_pack(remote_session, self.current_job_contract))
+                records.extend(build_user_pack(remote_session, self.current_job_contract.user))
 
         latest_sync_serial = AlchemyGeneric.get_highest_synced_sync_entry(remote_session)
         latest_sync_entry = AlchemyGeneric.get_from_primary_key(remote_session, Acd.SyncJournal, latest_sync_serial)
@@ -179,6 +178,11 @@ class H3AlchemyCore:
         remote_session.close()
 
         AlchemyGeneric.merge_multiple(local_session, records)
+        local_session.commit()
+
+        self.local_bases = AlchemyLocal.get_local_bases(local_session)
+        self.local_job_contracts = AlchemyLocal.get_local_users(local_session)
+
         local_session.close()
 
     # Login functions
@@ -252,11 +256,13 @@ class H3AlchemyCore:
 
         if self.current_job_contract:
             self.local_bases = AlchemyLocal.get_local_bases(local_session)
-            if self.current_job_contract.work_base not in self.local_bases:
-                # TODO : impossible because of the workbase FK; figure out what happens when JC changes to a new base
+            current_jc_base = AlchemyGeneric.get_from_primary_key(local_session,
+                                                                  Acd.WorkBase,
+                                                                  self.current_job_contract.work_base)
+            if current_jc_base not in self.local_bases:
                 logger.error(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
-                             .format(name=user.login, base=self.current_job_contract.work_base))
-                self.internal_state["base"] = "new"
+                             .format(name=user.login, base=current_jc_base.identifier))
+                self.internal_state["base"] = "relocated"
             else:
                 self.internal_state["user"] = "ok"
         else:
@@ -371,12 +377,12 @@ class H3AlchemyCore:
         self.serials = dict()
 
         for table in Acd.Base.metadata.tables:
-            if table != "journal_entries":
+            if table != "journal_entries" and not table.endswith("_history"):
                 self.serials.update({table: dict()})
                 mapped_class = get_class_by_table_name(table)
                 for base in self.local_bases:
-                    highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base)
-                    self.serials[table].update({base: highest})
+                    highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base.code)
+                    self.serials[table].update({base.code: highest})
 
     def sync_down(self):
         """
@@ -391,13 +397,13 @@ class H3AlchemyCore:
         entries, records = AlchemyRemote.get_updates(remote_session,
                                                      current_cursor,
                                                      self.local_bases,
-                                                     self.local_users)
+                                                     self.local_job_contracts)
         remote_session.close()
 
         if entries and records:
             process_downloaded_updates(entries, records)
 
-        self.rebase_queued_updates()
+            # self.rebase_queued_updates()
 
 
 def process_downloaded_updates(entries, records):
@@ -426,7 +432,8 @@ def process_downloaded_updates(entries, records):
             result, = AlchemyGeneric.delete(local_session, record_to_process)
         AlchemyGeneric.add(local_session, entry)
         if result != "ok":
-            # TODO : process this
+            # TODO : Wtf is this function doing
+
             down_sync_status = "error"
     remote_session.close()
     return down_sync_status
@@ -619,8 +626,7 @@ def build_key(record, mapped_class):
     :param mapped_class:
     :return:
     """
-    # TODO : why can't I have a real FK in the base field again ??
-    base = record.base.join("-") if record.base != 'GLOBAL' else ''
+    base = record.base.join("-") if record.base != 'ROOT' else ''
     period = record.period.join("-") if record.period != 'PERMANENT' else ''
     code = "{base}{prefix}-{period}{serial}".format(base=base,
                                                     prefix=mapped_class.prefix,
@@ -629,7 +635,7 @@ def build_key(record, mapped_class):
     return code
 
 
-def build_user_pack(session, job_contract):
+def build_user_pack(session, user_code):
     """
     Get everything related to a given job contract, to populate the local DB.
      - bases the user can see, most importantly the top one referenced in the JC
@@ -638,8 +644,6 @@ def build_user_pack(session, job_contract):
      - The Assigned Actions linking actions with the JC
 
     :param session:
-    :param job_contract:
-    :type job_contract: Object
     :return:
     """
     records = list()
@@ -658,15 +662,13 @@ def build_user_pack(session, job_contract):
     #     .filter(Acd.Action.code == Acd.AssignedAction.action)\
     #     .all()
 
+    user = AlchemyGeneric.get_from_primary_key(session, Acd.User, user_code)
+    job_contract = AlchemyGeneric.get_current_job_contract(session, user)
     job = AlchemyGeneric.get_from_primary_key(session, Acd.Job, job_contract.job_code)
-    records.append(job)
-    user = AlchemyGeneric.get_from_primary_key(session, Acd.User, job_contract.user)
-    records.append(user)
 
-    # make sure the user's job contract hasn't changed since login !
-    job_contract2 = AlchemyGeneric.get_current_job_contract(session, user)
-    assert job_contract2 == job_contract
-    records.append(job_contract2)
+    records.append(user)
+    records.append(job)
+    records.append(job_contract)
 
     action_pairs = AlchemyGeneric.get_assigned_actions(session, job_contract)
     for assigned_action, action in action_pairs:
@@ -675,10 +677,10 @@ def build_user_pack(session, job_contract):
     return records
 
 
-def build_base_pack(session, base):
+def build_base_pack(session, base_pkey):
     records = list()
 
-    work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base)
+    work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base_pkey)
     records.append(work_base)
 
     return records

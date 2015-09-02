@@ -23,11 +23,11 @@ class WorkBase(Base, Versioned):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
-    identifier = sqlalchemy.Column(sqlalchemy.String)  # ie SHB
+    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie SHB
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -57,10 +57,10 @@ class User(Base, Versioned):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    login = sqlalchemy.Column(sqlalchemy.String)  # i.e ebertolus
+    login = sqlalchemy.Column(sqlalchemy.String, unique=True)  # i.e ebertolus
     pw_hash = sqlalchemy.Column(sqlalchemy.String)  # hashed app-level password. SQL access will be different.
     first_name = sqlalchemy.Column(sqlalchemy.String)
     last_name = sqlalchemy.Column(sqlalchemy.String)
@@ -81,7 +81,7 @@ class JobContract(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String,
                                nullable=False,
                                default=datetime.date.today().year)
@@ -119,10 +119,10 @@ class Action(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    title = sqlalchemy.Column(sqlalchemy.String)  # ie manage_bases
+    title = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie manage_bases
     language = sqlalchemy.Column(sqlalchemy.String)  # For localization
     category = sqlalchemy.Column(sqlalchemy.String)  # ie "Stocks management"
     description = sqlalchemy.Column(sqlalchemy.String)
@@ -141,7 +141,7 @@ class Job(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     category = sqlalchemy.Column(sqlalchemy.String)  # ie FP
@@ -180,7 +180,7 @@ class AssignedAction(Base):
                                                                                  cascade="all, delete-orphan"),
                                                   foreign_keys=assigned_to)
 
-    action_fk = sqlalchemy.orm.relationship('Actions',
+    action_fk = sqlalchemy.orm.relationship('Action',
                                             backref=sqlalchemy.orm.backref('assigned_actions',
                                                                            cascade="all, delete-orphan"),
                                             foreign_keys=action)
@@ -199,7 +199,7 @@ class SyncJournal(Base):
 
     serial = sqlalchemy.Column(sqlalchemy.Integer, primary_key=True)  # negative for local entries
 
-    # A Job contract. Not a FK because local may not know it.
+    # A Job contract. Not a FK because local may not know it. For investigation purposes after the fact ! No target.
     origin = sqlalchemy.Column(sqlalchemy.String)
 
     type = sqlalchemy.Column(sqlalchemy.String)  # Create / Update / Delete
@@ -223,7 +223,7 @@ class Message(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="GLOBAL")
+    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
@@ -250,4 +250,4 @@ class Message(Base):
 
     # Group of items moving (internal) - incoming goods (proper admin format like waybill etc).
 
-    #  Global tables will have base = GLOBAL for codes of the form GLOBAL-USER-1.
+    #  Global tables will have base = ROOT. Codes will be of the form USER-1.

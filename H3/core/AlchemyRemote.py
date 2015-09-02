@@ -125,21 +125,21 @@ class H3AlchemyRemoteDB:
         :return:
         """
         hashed_login = hashlib.md5(('H3' + user.login).encode(encoding='ascii')).hexdigest()
+        plain_pass = user.pw_hash
         hashed_pass = hashlib.md5((user.pw_hash + user.login).encode(encoding='ascii')).hexdigest()
+        user.pw_hash = hashed_pass
         try:
-            # App-level
-            user.pw_hash = hashed_pass
             session.add(user)
             logger.debug(_("App credentials for {login} created")
                          .format(login=user.login))
 
-            # SQL-level
             query = sqlalchemy.text('CREATE USER "{h_login}" WITH PASSWORD \'{password}\';'
-                                    .format(h_login=hashed_login, password=hashed_pass))
+                                    .format(h_login=hashed_login, password=plain_pass))
             conn = self.engine.connect()
             conn.execution_options(isolation_level="AUTOCOMMIT")
             conn.execute(query)
             conn.close()
+
             logger.debug(_("SQL role {h_login} ({login}) created")
                          .format(h_login=hashed_login, login=user.login))
             return True
@@ -226,19 +226,10 @@ class H3AlchemyRemoteDB:
         :return:
         """
 
-        # Definition of root objects follows
+        # Definition of default objects follows
 
-        reader_user = Acd.User(code='USER-1',
-                               serial=1,
-                               login='reader',
-                               pw_hash='weak',
-                               first_name='Reader',
-                               last_name='H3',
-                               created_date=datetime.date.today(),
-                               banned_date=datetime.date(3000, 6, 6))
-
-        root_user = Acd.User(code='USER-2',
-                             serial=2,
+        root_user = Acd.User(code='USER-1',
+                             serial=1,
                              login='root',
                              pw_hash='secret',
                              first_name='Administrator',
@@ -246,17 +237,16 @@ class H3AlchemyRemoteDB:
                              created_date=datetime.date.today(),
                              banned_date=datetime.date(3000, 6, 6))
 
-        global_base = Acd.WorkBase(code='BASE-1',
-                                   serial=1,
-                                   identifier='GLOBAL',
-                                   parent='BASE-1',
-                                   full_name='Global node',
-                                   opened_date=datetime.date(1900, 1, 1),
-                                   closed_date=datetime.date(3000, 6, 6),
-                                   country='XX',
-                                   time_zone='UTC')
+        reader_user = Acd.User(code='USER-2',
+                               serial=2,
+                               login='reader',
+                               pw_hash='weak',
+                               first_name='Reader',
+                               last_name='H3',
+                               created_date=datetime.date.today(),
+                               banned_date=datetime.date(3000, 6, 6))
 
-        root_base = Acd.WorkBase(code='BASE-2',
+        root_base = Acd.WorkBase(code='BASE-1',
                                  serial=1,
                                  identifier='ROOT',
                                  parent='BASE-1',
@@ -270,25 +260,15 @@ class H3AlchemyRemoteDB:
                            serial=1,
                            category='FP')
 
-        root_contract = Acd.JobContract(code='ROOT-JOBCONTRACT-1900-1',
+        root_contract = Acd.JobContract(code='JOBCONTRACT-1',
                                         serial=1,
                                         base='ROOT',
-                                        work_base='BASE-2',
-                                        user='USER-2',
+                                        work_base='BASE-1',
+                                        user='USER-1',
                                         start_date=datetime.date(1900, 1, 1),
                                         end_date=datetime.date(3000, 6, 6),
                                         job_code='JOB-1',
                                         job_title='Global FP')
-
-        global_contract = Acd.JobContract(code='JOBCONTRACT-1',
-                                          serial=1,
-                                          base='GLOBAL',
-                                          work_base='BASE-1',
-                                          user='USER-1',
-                                          start_date=datetime.date(1900, 1, 1),
-                                          end_date=datetime.date(3000, 6, 6),
-                                          job_code='JOB-1',
-                                          job_title='Global target')
 
         root_a_1 = Acd.Action(code='ACTION-1',
                               serial=1,
@@ -296,24 +276,28 @@ class H3AlchemyRemoteDB:
                               language="EN_UK",
                               category="Administration",
                               description="Manage users")
+
         root_a_2 = Acd.Action(code='ACTION-2',
                               serial=2,
                               title='manage_bases',
                               language="EN_UK",
                               category="Logistics",
                               description="Manage bases")
+
         root_a_3 = Acd.Action(code='ACTION-3',
                               serial=3,
                               title='manage_jobs',
                               language="EN_UK",
                               category="FP",
                               description="Manage jobs")
+
         root_a_4 = Acd.Action(code='ACTION-4',
                               serial=4,
                               title='manage_job_contracts',
                               language="EN_UK",
                               category="Administration",
                               description="Manage job contracts")
+
         root_a_5 = Acd.Action(code='ACTION-5',
                               serial=5,
                               title='manage_assigned_actions',
@@ -321,51 +305,50 @@ class H3AlchemyRemoteDB:
                               category="Logistics",
                               description="Manage assigned actions")
 
-        root_c_a_1 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-1',
+        root_c_a_1 = Acd.AssignedAction(code='ASSIGNEDACTION-1',
                                         serial=1,
                                         base="ROOT",
-                                        contract='ROOT-JOBCONTRACT-1900-1',
+                                        assigned_to='JOBCONTRACT-1',
                                         action='ACTION-1',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_2 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-2',
+        root_c_a_2 = Acd.AssignedAction(code='ASSIGNEDACTION-2',
                                         serial=2,
                                         base="ROOT",
-                                        contract='ROOT-JOBCONTRACT-1900-1',
+                                        assigned_to='JOBCONTRACT-1',
                                         action='ACTION-2',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_3 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-3',
+        root_c_a_3 = Acd.AssignedAction(code='ASSIGNEDACTION-3',
                                         serial=3,
                                         base="ROOT",
-                                        contract='ROOT-JOBCONTRACT-1900-1',
+                                        assigned_to='JOBCONTRACT-1',
                                         action='ACTION-3',
                                         scope='all',
                                         maximum=-1)
 
-        root_c_a_4 = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-4',
+        root_c_a_4 = Acd.AssignedAction(code='ASSIGNEDACTION-4',
                                         serial=4,
                                         base="ROOT",
-                                        contract='ROOT-JOBCONTRACT-1900-1',
+                                        assigned_to='JOBCONTRACT-1',
                                         action='ACTION-4',
                                         scope='all',
                                         maximum=-1)
 
-        root_delegation = Acd.AssignedAction(code='ROOT-ASSIGNEDACTION-1900-5',
+        root_delegation = Acd.AssignedAction(code='ASSIGNEDACTION-5',
                                              serial=5,
                                              base="ROOT",
+                                             assigned_to='JOBCONTRACT-1',
+                                             action='ACTION-5',
                                              start_date=datetime.date(1900, 1, 1),
                                              end_date=datetime.date(3000, 6, 6),
-                                             action='ACTION-5',
                                              delegated_from='JOBCONTRACT-1',
-                                             delegated_to='ROOT-JOBCONTRACT-1900-1',
                                              scope='all',
                                              maximum=-1)
 
-        initial_sync_entry = Acd.SyncJournal(origin_jc='JOBCONTRACT-1',
-                                             target_jc='ROOT-JOBCONTRACT-1900-1',
+        initial_sync_entry = Acd.SyncJournal(origin='JOBCONTRACT-1',
                                              type="INIT",
                                              status="INIT",
                                              local_timestamp=datetime.date(1900, 1, 1))
@@ -387,7 +370,6 @@ class H3AlchemyRemoteDB:
             logger.debug(_("Given users rights to FP group role"))
             conn.close()
 
-            self.create_base(session, global_base)
             self.create_base(session, root_base)
             self.create_user(session, reader_user)
             self.create_user(session, root_user)
@@ -418,8 +400,6 @@ class H3AlchemyRemoteDB:
             session.add(root_job)
             logger.debug(_("Root job inserted"))
             session.add(root_contract)
-            session.add(global_contract)
-            logger.debug(_("Root and global contract inserted"))
             session.add(root_a_1)
             session.add(root_a_2)
             session.add(root_a_3)
@@ -450,10 +430,9 @@ class H3AlchemyRemoteDB:
             query0 = sqlalchemy.text("DROP DATABASE h3a;")
             query1 = sqlalchemy.text('DROP ROLE IF EXISTS h3_fps;')
             query2 = sqlalchemy.text('DROP ROLE IF EXISTS h3_users;')
-            query3 = sqlalchemy.text('DROP ROLE IF EXISTS global_users;')
-            query4 = sqlalchemy.text('DROP ROLE IF EXISTS root_users;')
-            query5 = sqlalchemy.text('DROP ROLE IF EXISTS "4f626e28d5c60212d8d38ed00f1444f2";')
-            query6 = sqlalchemy.text('DROP ROLE IF EXISTS "f66ce97dfce5d8604edab9a721f3b85b";')
+            query3 = sqlalchemy.text('DROP ROLE IF EXISTS root_users;')
+            query4 = sqlalchemy.text('DROP ROLE IF EXISTS "4f626e28d5c60212d8d38ed00f1444f2";')
+            query5 = sqlalchemy.text('DROP ROLE IF EXISTS "f66ce97dfce5d8604edab9a721f3b85b";')
 
             conn = self.engine.connect()
             conn.execution_options(isolation_level="AUTOCOMMIT")
@@ -463,7 +442,6 @@ class H3AlchemyRemoteDB:
             conn.execute(query3)
             conn.execute(query4)
             conn.execute(query5)
-            conn.execute(query6)
             conn.close()
 
             logger.debug(_("Default DB and roles successfully wiped out"))
@@ -489,7 +467,7 @@ def get_updates(session, first_serial, bases_list, job_contract_list):
     :param session: A session object targeted (bound) to the remote DB
     :param first_serial: the last update we don't need (excluded floor value)
     :param job_contract_list: Locally-recorded job contracts to get updates for.
-    :param bases_list: the base visibility, for which we request updates. Includes GLOBAL
+    :param bases_list: the base visibility, for which we request updates.
     :return: a list of sync entries and a list of various records
     :rtype : list, list
     """
@@ -517,10 +495,10 @@ def base_updates(session, first_serial, base):
     entries = list()
     records = list()
 
-    updates = session.query(Acd.SyncJournal) \
+    updates = session.query(Acd.SyncJournal, Acd.WorkBase) \
         .filter(Acd.SyncJournal.table == 'bases', Acd.SyncJournal.serial > first_serial) \
         .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
-        .filter(Acd.WorkBase.code == base) \
+        .filter(Acd.WorkBase.code == base.code) \
         .all()
 
     for entry, record in updates:
@@ -534,7 +512,7 @@ def individual_updates(session, first_serial, job_contract):
     entries = list()
     records = list()
 
-    job_updates = session.query(Acd.SyncJournal) \
+    job_updates = session.query(Acd.SyncJournal, Acd.Job) \
         .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
         .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
         .filter(Acd.Job.code == job_contract.job_code) \
@@ -544,7 +522,7 @@ def individual_updates(session, first_serial, job_contract):
         entries.append(entry)
         records.append(record)
 
-    user_updates = session.query(Acd.SyncJournal) \
+    user_updates = session.query(Acd.SyncJournal, Acd.User) \
         .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
         .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
         .filter(Acd.User.code == job_contract.user) \
@@ -554,7 +532,7 @@ def individual_updates(session, first_serial, job_contract):
         entries.append(entry)
         records.append(record)
 
-    jc_updates = session.query(Acd.SyncJournal) \
+    jc_updates = session.query(Acd.SyncJournal, Acd.JobContract) \
         .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
         .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
         .filter(Acd.JobContract.code == job_contract.code) \
@@ -564,7 +542,7 @@ def individual_updates(session, first_serial, job_contract):
         entries.append(entry)
         records.append(record)
 
-    action_updates = session.query(Acd.SyncJournal) \
+    action_updates = session.query(Acd.SyncJournal, Acd.AssignedAction, Acd.Action) \
         .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
         .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
         .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
