@@ -113,7 +113,7 @@ def get_lowest_queued_sync_entry(session):
             .one()
         logger.debug(_("Lowest (latest) sync entry serial is {no}")
                      .format(no=min_num.min))
-        return min_num.min if min_num else 0
+        return min_num.min or 0
     except sqlalchemy.orm.exc.NoResultFound:
         logger.info(_("No queued sync entries, defaulting to 0"))
         return 0

@@ -517,6 +517,7 @@ class H3MainGUI:
             self.current_screen = ManageBases(self)
 
     def run_setup_wizard(self):
+        # TODO: clear core variables before running wizard (current user, remote session), close reader/remote on exit
         SetupWizard(self)
 
     def set_status(self, status_string):
@@ -550,7 +551,7 @@ class ManageBases:
                 self.model.invisibleRootItem().appendRow(root_item)
                 self.model.invisibleRootItem().appendColumn([desc])
 
-        assert len(tree_row) == 1
+        # assert len(tree_row) == 1
 
         while tree_row:
             for parent in tree_row:
@@ -560,7 +561,7 @@ class ManageBases:
                         item.setData(record, 33)
                         desc = QtGui.QStandardItem(record.full_name)
                         parent.appendRow(item)
-                        parent.appendColumn(desc)
+                        parent.appendColumn([desc])
                         next_row.append(item)
             tree_row = next_row
             next_row = []
@@ -609,17 +610,20 @@ class ManageBases:
 
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
             # noinspection PyArgumentList
-            new_base = Acd.WorkBase(code="TEMP_" + create_base_box.baseCodeLineEdit.text(),
-                                    parent=create_base_box.parentBaseComboBox.text(),
+            new_base = Acd.WorkBase(base="BASE-1",
+                                    period="PERMANENT",
+                                    parent=create_base_box.parentBaseComboBox.currentText(),
+                                    identifier=create_base_box.baseCodeLineEdit.text(),
                                     full_name=create_base_box.fullNameLineEdit.text(),
-                                    opened_date=create_base_box.openingDateDateEdit.date(),
+                                    opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.counTryCodeLineEdit.text(),
-                                    time_zone=create_base_box.timeZoneComboBox.text())
+                                    time_zone=create_base_box.timeZoneComboBox.currentText())
             H3Core.create_base(new_base)
 
 
 def run():
     h3app = QtGui.QApplication(sys.argv)
+    # QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.Hebrew, QtCore.QLocale.Israel))
     desk = h3app.desktop()
     # noinspection PyUnusedLocal
     h3gui = H3MainGUI(desk)

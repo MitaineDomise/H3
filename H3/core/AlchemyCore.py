@@ -166,7 +166,7 @@ class H3AlchemyCore:
             pass
         else:
             if self.internal_state["base"] == "new":
-                # TODO: Just adding the top base. Others can be added in through admin tools.
+                # Just adding the top base. Others can be added in through admin tools.
                 records.extend(build_base_pack(remote_session, self.current_job_contract.work_base))
 
             if self.internal_state["user"] == "remote":
@@ -286,21 +286,31 @@ class H3AlchemyCore:
         :param base:
         :return:
         """
-        sync_entry = Acd.SyncJournal(origin_jc=self.current_job_contract,
-                                     target_jc=self.current_job_contract,
+        local_session = SessionLocal()
+        self.prepare_record(base)
+        self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
+        self.queue_cursor -= 1
+        sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
+                                     origin=self.current_job_contract.code,
                                      type="CREATE",
                                      table="bases",
                                      key=base.code,
                                      status="UNSUBMITTED",
                                      local_timestamp=datetime.datetime.utcnow())
-        local_session = SessionLocal()
-        status1, = AlchemyGeneric.merge(local_session, base)
-        status2, = AlchemyGeneric.merge(local_session, sync_entry)
+        status1 = AlchemyGeneric.merge(local_session, base)[0]
+        status2 = AlchemyGeneric.merge(local_session, sync_entry)[0]
         if status1 == status2 == "ok":
             local_session.commit()
         else:
             local_session.rollback()
         local_session.close()
+
+    def prepare_record(self, record):
+        table = sqlalchemy.inspect(record).mapper.local_table.name
+        local_session = SessionLocal()
+        self.extract_current_serials(local_session)
+        record.serial = self.serials[table][record.base] + 1
+        record.code = "TMP-" + build_key(record)
 
     def sync_up(self):
         """
@@ -350,11 +360,12 @@ class H3AlchemyCore:
                 if new_serial != record.serial:
                     entry.status = "MODIFIED"
                     record.serial = new_serial
-                    record.code = "TMP-".join(build_key(record, mapped_class))
+                    record.code = "TMP-" + build_key(record)
                 # post a new "unsubmitted" entry with the corrected serial and code.
                 # the old entry's status gets updated, pointing to the new TMP-key for that record.
                 if entry.status == "MODIFIED":
                     new_entry = entry.copy()
+                    self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
                     self.queue_cursor -= 1
                     new_entry.serial = self.queue_cursor
                     new_entry.key = record.code
@@ -432,7 +443,6 @@ def process_downloaded_updates(entries, records):
             result, = AlchemyGeneric.delete(local_session, record_to_process)
         AlchemyGeneric.add(local_session, entry)
         if result != "ok":
-            # TODO : Wtf is this function doing
 
             down_sync_status = "error"
     remote_session.close()
@@ -480,7 +490,6 @@ def submit_updates_for_upload(entries):
             elif result == "dupe":
                 upward_sync_status = "conflict"
             elif result == "err":
-                # TODO : process this
                 upward_sync_status = "error"
 
             entry.processed_timestamp = timestamp
@@ -495,7 +504,6 @@ def submit_updates_for_upload(entries):
         if result1 == result2 == "ok":
             pass
         else:
-            # TODO : process this
             upward_sync_status = "error"
 
     # commit changes to local entries (for the ones that did not upload directly)
@@ -506,6 +514,7 @@ def submit_updates_for_upload(entries):
         deletion_session.commit()
         remote_session.commit()
     else:
+        logger.critical(_("An error occured while trying to upload current sync queue"))
         deletion_session.commit()
         remote_session.rollback()
 
@@ -616,20 +625,20 @@ def get_from_primary_key(mapped_class, pkey, location="local"):
     return record
 
 
-def build_key(record, mapped_class):
+def build_key(record):
     """
     Builds a human-readable primary key out of the serial and meta fields of the record.
     Global records have base = GLOBAL and will not have this prefix
     Permanent records (never archived) have period = PERMANENT and the year / quarter etc will not appear
     Examples : SHB-REQUISITION-2015-172 , USER-324
     :param record:
-    :param mapped_class:
     :return:
     """
-    base = record.base.join("-") if record.base != 'ROOT' else ''
+    mapper = sqlalchemy.inspect(record).mapper
+    base = record.base.join("-") if record.base != 'BASE-1' else ''
     period = record.period.join("-") if record.period != 'PERMANENT' else ''
     code = "{base}{prefix}-{period}{serial}".format(base=base,
-                                                    prefix=mapped_class.prefix,
+                                                    prefix=mapper.class_.prefix,
                                                     period=period,
                                                     serial=record.serial)
     return code

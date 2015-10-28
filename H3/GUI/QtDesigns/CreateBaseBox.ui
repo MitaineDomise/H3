@@ -34,7 +34,11 @@
        </widget>
       </item>
       <item row="0" column="1">
-       <widget class="QLineEdit" name="baseCodeLineEdit"/>
+       <widget class="QLineEdit" name="baseCodeLineEdit">
+        <property name="text">
+         <string>SHB</string>
+        </property>
+       </widget>
       </item>
       <item row="1" column="0">
        <widget class="QLabel" name="parentBaseLabel">
@@ -60,7 +64,11 @@
        </widget>
       </item>
       <item row="2" column="1">
-       <widget class="QLineEdit" name="fullNameLineEdit"/>
+       <widget class="QLineEdit" name="fullNameLineEdit">
+        <property name="text">
+         <string>Shabunda</string>
+        </property>
+       </widget>
       </item>
       <item row="3" column="0">
        <widget class="QLabel" name="openingDateLabel">
@@ -93,6 +101,9 @@
        <widget class="QLineEdit" name="counTryCodeLineEdit">
         <property name="inputMask">
          <string>&gt;AA; </string>
+        </property>
+        <property name="text">
+         <string>CD</string>
         </property>
        </widget>
       </item>

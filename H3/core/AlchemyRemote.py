@@ -230,6 +230,8 @@ class H3AlchemyRemoteDB:
 
         root_user = Acd.User(code='USER-1',
                              serial=1,
+                             base='BASE-1',
+                             period='PERMANENT',
                              login='root',
                              pw_hash='secret',
                              first_name='Administrator',
@@ -239,6 +241,8 @@ class H3AlchemyRemoteDB:
 
         reader_user = Acd.User(code='USER-2',
                                serial=2,
+                               base='BASE-1',
+                               period='PERMANENT',
                                login='reader',
                                pw_hash='weak',
                                first_name='Reader',
@@ -248,6 +252,8 @@ class H3AlchemyRemoteDB:
 
         root_base = Acd.WorkBase(code='BASE-1',
                                  serial=1,
+                                 base='BASE-1',
+                                 period='PERMANENT',
                                  identifier='ROOT',
                                  parent='BASE-1',
                                  full_name='Hierarchy root',
@@ -258,11 +264,14 @@ class H3AlchemyRemoteDB:
 
         root_job = Acd.Job(code='JOB-1',
                            serial=1,
+                           base='BASE-1',
+                           period='PERMANENT',
                            category='FP')
 
         root_contract = Acd.JobContract(code='JOBCONTRACT-1',
                                         serial=1,
-                                        base='ROOT',
+                                        base='BASE-1',
+                                        period='PERMANENT',
                                         work_base='BASE-1',
                                         user='USER-1',
                                         start_date=datetime.date(1900, 1, 1),
@@ -274,35 +283,35 @@ class H3AlchemyRemoteDB:
                               serial=1,
                               title='manage_users',
                               language="EN_UK",
-                              category="Administration",
+                              category="FP Stuff",
                               description="Manage users")
 
         root_a_2 = Acd.Action(code='ACTION-2',
                               serial=2,
                               title='manage_bases',
                               language="EN_UK",
-                              category="Logistics",
+                              category="FP Stuff",
                               description="Manage bases")
 
         root_a_3 = Acd.Action(code='ACTION-3',
                               serial=3,
                               title='manage_jobs',
                               language="EN_UK",
-                              category="FP",
+                              category="FP Stuff",
                               description="Manage jobs")
 
         root_a_4 = Acd.Action(code='ACTION-4',
                               serial=4,
                               title='manage_job_contracts',
                               language="EN_UK",
-                              category="Administration",
+                              category="FP Stuff",
                               description="Manage job contracts")
 
         root_a_5 = Acd.Action(code='ACTION-5',
                               serial=5,
                               title='manage_assigned_actions',
                               language="EN_UK",
-                              category="Logistics",
+                              category="FP Stuff",
                               description="Manage assigned actions")
 
         root_c_a_1 = Acd.AssignedAction(code='ASSIGNEDACTION-1',
