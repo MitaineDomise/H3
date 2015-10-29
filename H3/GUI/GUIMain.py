@@ -536,7 +536,16 @@ class ManageBases:
         self.gui = parent_h3_gui
         self.menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Bases.ui"), self.gui.root_window)
         self.gui.root_window.setCentralWidget(self.menu)
-        self.model = QtGui.QStandardItemModel()
+        self.bases_tree_model = QtGui.QStandardItemModel()
+        self.menu.treeView.setModel(self.bases_tree_model)
+        self.base_selection_model = QtGui.QItemSelectionModel(self.bases_tree_model)
+        self.refresh_tree()
+
+    def refresh_tree(self):
+        self.bases_tree_model = QtGui.QStandardItemModel()
+        self.menu.treeView.setModel(self.bases_tree_model)
+        self.base_selection_model = QtGui.QItemSelectionModel(self.bases_tree_model)
+
         base_data = AlchemyCore.read_table(Acd.WorkBase)
 
         tree_row = list()
@@ -544,32 +553,36 @@ class ManageBases:
 
         for record in base_data:
             if record.parent == record.code:
-                root_item = QtGui.QStandardItem(record.code)
-                desc = QtGui.QStandardItem(record.full_name)
-                root_item.setData(record, 33)
+                root_record = base_data.pop(base_data.index(record))
+                root_item = QtGui.QStandardItem(root_record.identifier)
+                root_desc = QtGui.QStandardItem(root_record.full_name)
+                root_item.setData(root_record, 33)  # includes the base object itself in the first custom data role
+                hidden_root = self.bases_tree_model.invisibleRootItem()
+                root_child_no = hidden_root.rowCount()
+                hidden_root.setChild(root_child_no, 0, root_item)
+                hidden_root.setChild(root_child_no, 1, root_desc)
                 tree_row.append(root_item)
-                self.model.invisibleRootItem().appendRow(root_item)
-                self.model.invisibleRootItem().appendColumn([desc])
 
         # assert len(tree_row) == 1
 
         while tree_row:
             for parent in tree_row:
                 for base in base_data:
-                    if base.parent == parent.data(33).code and not base.code == base.parent:
-                        item = QtGui.QStandardItem(record.identifier)
-                        item.setData(record, 33)
-                        desc = QtGui.QStandardItem(record.full_name)
-                        parent.appendRow(item)
-                        parent.appendColumn([desc])
-                        next_row.append(item)
+                    if base.parent == parent.data(33).code:
+                        base_item = QtGui.QStandardItem(base.identifier)
+                        base_desc = QtGui.QStandardItem(base.full_name)
+                        base_item.setData(base, 33)
+                        parent_child_no = parent.rowCount()
+                        parent.setChild(parent_child_no, 0, base_item)
+                        parent.setChild(parent_child_no, 1, base_desc)
+                        next_row.append(base_item)
             tree_row = next_row
             next_row = []
 
-        self.model.setColumnCount(2)
+        self.bases_tree_model.setColumnCount(2)
         headers = (_('Base code'), _('Full name'))
-        self.model.setHorizontalHeaderLabels(headers)
-        self.menu.treeView.setModel(self.model)
+        self.bases_tree_model.setHorizontalHeaderLabels(headers)
+        self.menu.treeView.expandAll()
         self.menu.treeView.resizeColumnToContents(0)
         self.menu.treeView.resizeColumnToContents(1)
 
@@ -594,16 +607,16 @@ class ManageBases:
                 self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base_box(self):
-        selected_base = self.base_selection_model.currentIndex().data(33)
+        selected_index = self.base_selection_model.currentIndex()
+
+        base_index = self.bases_tree_model.index(selected_index.row(), 0, selected_index.parent())
+
+        selected_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
-        base_data = AlchemyCore.read_table(Acd.WorkBase)
-        bases_list = list()
 
-        for record in base_data:
-            bases_list.append(record.code)
-
-        create_base_box.parentBaseComboBox.setModel(QtGui.QStringListModel(bases_list))
+        create_base_box.parentLabel.setText(selected_base.identifier + " - " + selected_base.full_name)
         create_base_box.timeZoneComboBox.setModel(QtGui.QStringListModel(["UTC", "GMT"]))
 
         create_base_box.openingDateDateEdit.setDate(datetime.date.today())
@@ -612,18 +625,19 @@ class ManageBases:
             # noinspection PyArgumentList
             new_base = Acd.WorkBase(base="BASE-1",
                                     period="PERMANENT",
-                                    parent=create_base_box.parentBaseComboBox.currentText(),
+                                    parent=selected_base.code,
                                     identifier=create_base_box.baseCodeLineEdit.text(),
                                     full_name=create_base_box.fullNameLineEdit.text(),
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.counTryCodeLineEdit.text(),
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
             H3Core.create_base(new_base)
+            self.refresh_tree()
+
 
 
 def run():
     h3app = QtGui.QApplication(sys.argv)
-    # QtCore.QLocale.setDefault(QtCore.QLocale(QtCore.QLocale.Hebrew, QtCore.QLocale.Israel))
     desk = h3app.desktop()
     # noinspection PyUnusedLocal
     h3gui = H3MainGUI(desk)

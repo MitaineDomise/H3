@@ -43,15 +43,9 @@
       <item row="1" column="0">
        <widget class="QLabel" name="parentBaseLabel">
         <property name="text">
-         <string>&amp;Parent Base</string>
-        </property>
-        <property name="buddy">
-         <cstring>parentBaseComboBox</cstring>
+         <string>Parent Base</string>
         </property>
        </widget>
-      </item>
-      <item row="1" column="1">
-       <widget class="QComboBox" name="parentBaseComboBox"/>
       </item>
       <item row="2" column="0">
        <widget class="QLabel" name="fullNameLabel">
@@ -119,6 +113,13 @@
       </item>
       <item row="5" column="1">
        <widget class="QComboBox" name="timeZoneComboBox"/>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="parentLabel">
+        <property name="text">
+         <string/>
+        </property>
+       </widget>
       </item>
      </layout>
     </widget>

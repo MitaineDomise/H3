@@ -209,7 +209,6 @@ def get_highest_serial(session, mapped_class, base_code):
     try:
         max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
             .filter(mapped_class.base == base_code) \
-            .filter(mapped_class.code.notlike('TMP-%')) \
             .one()
         logger.debug(_("Highest serial for class {mapped} in local is {no}")
                      .format(mapped=mapped_class, no=max_num.max))
