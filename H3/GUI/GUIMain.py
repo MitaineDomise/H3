@@ -68,8 +68,11 @@ class SetupWizard:
         self.wizard.searchButton.clicked.connect(self.check_user)
 
         self.wizard.accepted.connect(self.connect_and_sync)
-        if self.wizard.exec_() == QtGui.QDialog.Rejected and not H3Core.wizard_system_ready():
-            sys.exit()
+        if self.wizard.exec_() == QtGui.QDialog.Rejected:
+            if H3Core.wizard_system_ready():
+                H3Core.log_off()
+            else:
+                sys.exit()
 
     def connect_and_sync(self):
         """
@@ -187,21 +190,32 @@ class SetupWizard:
         local_db_exists = AlchemyCore.ping_local(self.wizard.localAddress.text())
         # noinspection PyUnusedLocal
         temp_local_ok = self.wizard.local_ok
-        if local_db_exists == -1:
+        if local_db_exists == "OK":
             self.wizard.localDBstatus.setText(_("Ready to create new local DB at {location}")
                                               .format(location=self.wizard.localAddress.text()))
             temp_local_ok = True
-        elif local_db_exists == 1:
+        elif local_db_exists == "H3DB":
             self.wizard.localDBstatus.setText(_("{location} is a valid H3 DB")
                                               .format(location=self.wizard.localAddress.text()))
             temp_local_ok = True
-        else:
-            assert local_db_exists == 0
-            if self.wizard.localAddress.text():
-                self.wizard.localDBstatus.setText(_("{location} is not a valid location for a H3 DB")
-                                                  .format(location=self.wizard.localAddress.text()))
-            else:
-                self.wizard.localDBstatus.setText("")
+        elif local_db_exists == "OTHERFILE":
+            self.wizard.localDBstatus.setText(_("{location} is not a valid location for a H3 DB")
+                                              .format(location=self.wizard.localAddress.text()))
+            temp_local_ok = False
+        elif local_db_exists == "NO_RW":
+            self.wizard.localDBstatus.setText(_("Impossible to read or write {location}")
+                                              .format(location=self.wizard.localAddress.text()))
+            temp_local_ok = False
+        elif local_db_exists == "NO_R":
+            self.wizard.localDBstatus.setText(_("Impossible to read {location}")
+                                              .format(location=self.wizard.localAddress.text()))
+            temp_local_ok = False
+        elif local_db_exists == "NO_W":
+            self.wizard.localDBstatus.setText(_("Impossible to write {location}")
+                                              .format(location=self.wizard.localAddress.text()))
+            temp_local_ok = False
+        elif local_db_exists == "EMPTY":
+            self.wizard.localDBstatus.setText("")
             temp_local_ok = False
         if temp_local_ok != self.wizard.local_ok:
             self.wizard.local_ok = temp_local_ok
@@ -517,7 +531,7 @@ class H3MainGUI:
             self.current_screen = ManageBases(self)
 
     def run_setup_wizard(self):
-        # TODO: clear core variables before running wizard (current user, remote session), close reader/remote on exit
+        H3Core.clear_variables()
         SetupWizard(self)
 
     def set_status(self, status_string):
@@ -541,10 +555,17 @@ class ManageBases:
         self.base_selection_model = QtGui.QItemSelectionModel(self.bases_tree_model)
         self.refresh_tree()
 
+        self.base_selection_model = self.menu.treeView.selectionModel()
+        self.base_selection_model.currentChanged.connect(self.update_stats)
+
+        self.menu.createButton.clicked.connect(self.create_base_box)
+        # self.menu.editButton.clicked.connect(self.edit_box)
+        # self.menu.deleteButton.clicked.connect(self.delete_box)
+
     def refresh_tree(self):
-        self.bases_tree_model = QtGui.QStandardItemModel()
-        self.menu.treeView.setModel(self.bases_tree_model)
-        self.base_selection_model = QtGui.QItemSelectionModel(self.bases_tree_model)
+        hidden_root = self.bases_tree_model.invisibleRootItem()
+        for i in range(0, hidden_root.rowCount()):
+            hidden_root.removeRow(i)
 
         base_data = AlchemyCore.read_table(Acd.WorkBase)
 
@@ -557,13 +578,10 @@ class ManageBases:
                 root_item = QtGui.QStandardItem(root_record.identifier)
                 root_desc = QtGui.QStandardItem(root_record.full_name)
                 root_item.setData(root_record, 33)  # includes the base object itself in the first custom data role
-                hidden_root = self.bases_tree_model.invisibleRootItem()
                 root_child_no = hidden_root.rowCount()
                 hidden_root.setChild(root_child_no, 0, root_item)
                 hidden_root.setChild(root_child_no, 1, root_desc)
                 tree_row.append(root_item)
-
-        # assert len(tree_row) == 1
 
         while tree_row:
             for parent in tree_row:
@@ -586,13 +604,6 @@ class ManageBases:
         self.menu.treeView.resizeColumnToContents(0)
         self.menu.treeView.resizeColumnToContents(1)
 
-        self.base_selection_model = self.menu.treeView.selectionModel()
-        self.base_selection_model.currentChanged.connect(self.update_stats)
-
-        self.menu.createButton.clicked.connect(self.create_base_box)
-        # self.menu.editButton.clicked.connect(self.edit_box)
-        # self.menu.deleteButton.clicked.connect(self.delete_box)
-
     @QtCore.Slot(int)
     def update_stats(self, base_index):
         if not base_index:
@@ -607,9 +618,8 @@ class ManageBases:
                 self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base_box(self):
-        selected_index = self.base_selection_model.currentIndex()
-
-        base_index = self.bases_tree_model.index(selected_index.row(), 0, selected_index.parent())
+        row_index = self.base_selection_model.currentIndex()
+        base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
 
         selected_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
 
@@ -631,9 +641,14 @@ class ManageBases:
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.counTryCodeLineEdit.text(),
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
-            H3Core.create_base(new_base)
-            self.refresh_tree()
-
+            if H3Core.create_base(new_base) == "OK":
+                self.refresh_tree()
+            else:
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not created"),
+                                                _("H3 could not create this base. Check all data is valid"),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
 
 
 def run():

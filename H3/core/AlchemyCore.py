@@ -3,8 +3,10 @@ __author__ = 'Man'
 import configparser
 import logging
 import datetime
+import os
 
 import sqlalchemy.orm
+import sqlalchemy.exc
 
 from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from . import AlchemyClassDefs as Acd
@@ -24,7 +26,6 @@ class H3AlchemyCore:
         """
         Creates the values and objects used throughout a user session.
         """
-
         self.local_db = AlchemyLocal.H3AlchemyLocalDB(None)
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(None)
 
@@ -45,6 +46,16 @@ class H3AlchemyCore:
 
         self.options = configparser.ConfigParser()
 
+    def clear_variables(self):
+        self.internal_state = dict({"user": "", "base": ""})
+
+        self.local_bases = list()
+        self.local_job_contracts = list()
+
+        self.assigned_actions = list()
+        self.serials = dict()
+        self.queue_cursor = 0
+
     # Wizard-related functions
 
     def wizard_system_ready(self):
@@ -63,7 +74,7 @@ class H3AlchemyCore:
                 temp_local_db_location = self.options.get('DB Locations', 'local')
                 temp_remote_db_location = self.options.get('DB Locations', 'remote')
                 self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(temp_remote_db_location)
-                if ping_local(temp_local_db_location) == 1:
+                if ping_local(temp_local_db_location) == "H3DB":
                     self.local_db = AlchemyLocal.H3AlchemyLocalDB(temp_local_db_location)
                     SessionLocal.configure(bind=self.local_db.engine)
                     if self.options.has_option('H3 Options', 'current user'):
@@ -187,6 +198,14 @@ class H3AlchemyCore:
 
     # Login functions
 
+    def log_off(self):
+        """
+        Kills the remote DB engine
+        :return:
+        """
+        if self.remote_db.engine:
+            self.remote_db.engine.dispose()
+
     def local_login(self, username, password):
         """
         Logs in at app-level, in the local DB.
@@ -282,35 +301,56 @@ class H3AlchemyCore:
 
     def create_base(self, base):
         """
-        Builds the user object and sends it to the remote engine for app- and SQL-level setup.
+        Prepares the record and sync entry to submit to local DB
         :param base:
         :return:
         """
         local_session = SessionLocal()
-        self.prepare_record(base)
-        self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
+        self.prepare_record(base, local_session)
+        sync_entry = self.prepare_sync_entry(base, local_session)
+        try:
+            local_session.add(base)
+            local_session.add(sync_entry)
+            local_session.commit()
+            return "OK"
+        except sqlalchemy.exc.SQLAlchemyError:
+            local_session.rollback()
+            return "ERR"
+        finally:
+            local_session.close()
+
+    def prepare_sync_entry(self, record, session):
+        self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(session)
         self.queue_cursor -= 1
         sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
                                      origin=self.current_job_contract.code,
                                      type="CREATE",
                                      table="bases",
-                                     key=base.code,
+                                     key=record.code,
                                      status="UNSUBMITTED",
                                      local_timestamp=datetime.datetime.utcnow())
-        status1 = AlchemyGeneric.merge(local_session, base)[0]
-        status2 = AlchemyGeneric.merge(local_session, sync_entry)[0]
-        if status1 == status2 == "ok":
-            local_session.commit()
-        else:
-            local_session.rollback()
-        local_session.close()
+        return sync_entry
 
-    def prepare_record(self, record):
-        table = sqlalchemy.inspect(record).mapper.local_table.name
-        local_session = SessionLocal()
-        self.extract_current_serials(local_session)
+    def prepare_record(self, record, session):
+        """
+        Get a new TMP number with incremented serial and PKey.
+        Builds a human-readable primary key out of the serial and meta fields of the record.
+        Global records have base = GLOBAL and will not have this prefix
+        Permanent records (never archived) have period = PERMANENT and the year / quarter etc will not appear
+        Examples : SHB-REQUISITION-2015-172 , USER-324
+        :param record:
+        :return:
+        """
+        mapper = sqlalchemy.inspect(record).mapper
+        table = mapper.local_table.name
+        self.extract_current_serials(session)
         record.serial = self.serials[table][record.base] + 1
-        record.code = "TMP-" + build_key(record)
+        base = record.base.join("-") if record.base != 'BASE-1' else ''
+        period = record.period.join("-") if record.period != 'PERMANENT' else ''
+        record.code = "TMP-{base}{prefix}-{period}{serial}".format(base=base,
+                                                                   prefix=mapper.class_.prefix,
+                                                                   period=period,
+                                                                   serial=record.serial)
 
     def sync_up(self):
         """
@@ -360,7 +400,7 @@ class H3AlchemyCore:
                 if new_serial != record.serial:
                     entry.status = "MODIFIED"
                     record.serial = new_serial
-                    record.code = "TMP-" + build_key(record)
+                    self.prepare_record(record, local_session)
                 # post a new "unsubmitted" entry with the corrected serial and code.
                 # the old entry's status gets updated, pointing to the new TMP-key for that record.
                 if entry.status == "MODIFIED":
@@ -436,12 +476,12 @@ def process_downloaded_updates(entries, records):
             if record.code == entry.key:
                 record_to_process = records.pop(record)
         if entry.type == "create":
-            result, = AlchemyGeneric.add(local_session, record_to_process)
+            result, = AlchemyGeneric.attempt_add(local_session, record_to_process)
         elif entry.type == "update":
-            result, = AlchemyGeneric.merge(local_session, record_to_process)
+            result, = AlchemyGeneric.attempt_merge(local_session, record_to_process)
         elif entry.type == "delete":
-            result, = AlchemyGeneric.delete(local_session, record_to_process)
-        AlchemyGeneric.add(local_session, entry)
+            result, = AlchemyGeneric.attempt_delete(local_session, record_to_process)
+        AlchemyGeneric.attempt_add(local_session, entry)
         if result != "ok":
 
             down_sync_status = "error"
@@ -461,12 +501,11 @@ def submit_updates_for_upload(entries):
     remote_session = SessionRemote()
     versioned_session(remote_session)
     for entry in entries:
-        timestamp = datetime.datetime.utcnow()
-
         # The process only tries to upload "unsubmitted" updates.
         # If it fails, the entry stays in the queue for rebasing.
         # During rebase the entry's status will be set to "modified" to avoid double-upload
         if entry.status == "UNSUBMITTED":
+            timestamp = datetime.datetime.utcnow()
 
             # Fetch the record to process and make the candidate for upload
             record_class = get_class_by_table_name(entry.table)
@@ -476,17 +515,17 @@ def submit_updates_for_upload(entries):
 
             # Actually try and make the changes to remote
             if entry.type == "create":
-                result, timestamp = AlchemyGeneric.add(remote_session, record_copy)
+                result, timestamp = AlchemyGeneric.attempt_add(remote_session, record_copy)
             elif entry.type == "update":
-                result, timestamp = AlchemyGeneric.merge(remote_session, record_copy)
+                result, timestamp = AlchemyGeneric.attempt_merge(remote_session, record_copy)
             elif entry.type == "delete":
-                result, timestamp = AlchemyGeneric.delete(remote_session, record_copy)
+                result, timestamp = AlchemyGeneric.attempt_delete(remote_session, record_copy)
 
             # If everything went OK mark the local RECORD for deletion.
             #  It will be copied into remote and the final version will be downloaded at sync_down
             if result == "ok":
                 entry.status = "ACCEPTED"
-                AlchemyGeneric.delete(deletion_session, record)
+                AlchemyGeneric.attempt_delete(deletion_session, record)
             elif result == "dupe":
                 upward_sync_status = "conflict"
             elif result == "err":
@@ -499,8 +538,8 @@ def submit_updates_for_upload(entries):
         # Queue up sync entries for remote record and delete the local version.
         entry_copy = entry.copy()
         entry_copy.serial = None
-        result1, = AlchemyGeneric.add(remote_session, entry_copy)
-        result2, = AlchemyGeneric.delete(deletion_session, entry)
+        result1, = AlchemyGeneric.attempt_add(remote_session, entry_copy)
+        result2, = AlchemyGeneric.attempt_delete(deletion_session, entry)
         if result1 == result2 == "ok":
             pass
         else:
@@ -545,22 +584,39 @@ def ping_local(location):
     :param location:
     :return:
     """
-    # TODO: check that file creation works / change detection of absent file through IOError. OS.access is the one
+    result = ""
     if location == "":
-        return 0  # open() doesn't error out on an empty filename
-    try:
-        open(location)  # fails with IOError if file doesn't exist
-        temp_local_db = AlchemyLocal.H3AlchemyLocalDB(location)
-        SessionLocal.configure(bind=temp_local_db.engine)
-        local_session = SessionLocal()
-        result = AlchemyLocal.has_a_base(local_session)
-        local_session.close()
-        if result:
-            return 1  # This is a H3 DB
+        result = "EMPTY"
+    elif os.access(location, os.F_OK):  # if file exists, check it's a H3 DB
+        if os.access(location, os.R_OK and os.W_OK):
+            temp_local_db = AlchemyLocal.H3AlchemyLocalDB(location)
+            SessionLocal.configure(bind=temp_local_db.engine)
+            local_session = SessionLocal()
+            if AlchemyLocal.has_a_base(local_session):
+                result = "H3DB"
+            else:
+                result = "OTHERFILE"
+            local_session.close()
         else:
-            return 0  # This is NOT a H3 DB, file will not be written to
-    except IOError:
-        return -1  # No file here, OK to create
+            if not os.access(location, os.R_OK) and not os.access(location, os.W_OK):
+                result = "NO_RW"
+            elif os.access(location, os.R_OK):
+                result = "NO_R"
+            elif os.access(location, os.W_OK):
+                result = "NO_W"
+    else:  # file doesn't exist, check directory permissions
+        dir = os.path.dirname(location)
+        if os.access(dir, os.R_OK and os.W_OK):  # user can read and write this location
+            result = "OK"
+        else:
+            if not os.access(dir, os.R_OK) and not os.access(dir, os.W_OK):
+                result = "NO_RW"
+            elif os.access(dir, os.R_OK):
+                result = "NO_R"
+            elif os.access(dir, os.W_OK):
+                result = "NO_W"
+    return result
+
 
 
 def ping_remote(address):
@@ -623,25 +679,6 @@ def get_from_primary_key(mapped_class, pkey, location="local"):
     record = AlchemyGeneric.get_from_primary_key(session, mapped_class, pkey)
     session.close()
     return record
-
-
-def build_key(record):
-    """
-    Builds a human-readable primary key out of the serial and meta fields of the record.
-    Global records have base = GLOBAL and will not have this prefix
-    Permanent records (never archived) have period = PERMANENT and the year / quarter etc will not appear
-    Examples : SHB-REQUISITION-2015-172 , USER-324
-    :param record:
-    :return:
-    """
-    mapper = sqlalchemy.inspect(record).mapper
-    base = record.base.join("-") if record.base != 'BASE-1' else ''
-    period = record.period.join("-") if record.period != 'PERMANENT' else ''
-    code = "{base}{prefix}-{period}{serial}".format(base=base,
-                                                    prefix=mapper.class_.prefix,
-                                                    period=period,
-                                                    serial=record.serial)
-    return code
 
 
 def build_user_pack(session, user_code):

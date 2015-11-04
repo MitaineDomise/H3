@@ -77,7 +77,7 @@ def get_from_primary_key(session, class_to_query, p_key):
                      .format(cls=class_to_query, key=p_key))
 
 
-def add(session, record):
+def attempt_add(session, record):
     """
     Adds (inserts) a record into the target db.
     Should be used for new records.
@@ -104,7 +104,7 @@ def add(session, record):
         return "err", timestamp
 
 
-def merge(session, record):
+def attempt_merge(session, record):
     """
     Merges (updates) a record into the local db.
     Shouldn't be used for new records.
@@ -136,7 +136,7 @@ def merge_multiple(session, records):
                          .format(list=records))
 
 
-def delete(session, record):
+def attempt_delete(session, record):
     """
     deletes a record from the local db
     :param record:
