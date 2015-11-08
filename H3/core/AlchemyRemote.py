@@ -282,35 +282,30 @@ class H3AlchemyRemoteDB:
         root_a_1 = Acd.Action(code='ACTION-1',
                               serial=1,
                               title='manage_users',
-                              language="EN_UK",
                               category="FP Stuff",
                               description="Manage users")
 
         root_a_2 = Acd.Action(code='ACTION-2',
                               serial=2,
                               title='manage_bases',
-                              language="EN_UK",
                               category="FP Stuff",
                               description="Manage bases")
 
         root_a_3 = Acd.Action(code='ACTION-3',
                               serial=3,
                               title='manage_jobs',
-                              language="EN_UK",
                               category="FP Stuff",
                               description="Manage jobs")
 
         root_a_4 = Acd.Action(code='ACTION-4',
                               serial=4,
                               title='manage_job_contracts',
-                              language="EN_UK",
                               category="FP Stuff",
                               description="Manage job contracts")
 
         root_a_5 = Acd.Action(code='ACTION-5',
                               serial=5,
                               title='manage_assigned_actions',
-                              language="EN_UK",
                               category="FP Stuff",
                               description="Manage assigned actions")
 
@@ -318,33 +313,25 @@ class H3AlchemyRemoteDB:
                                         serial=1,
                                         base="ROOT",
                                         assigned_to='JOBCONTRACT-1',
-                                        action='ACTION-1',
-                                        scope='all',
-                                        maximum=-1)
+                                        action='ACTION-1')
 
         root_c_a_2 = Acd.AssignedAction(code='ASSIGNEDACTION-2',
                                         serial=2,
                                         base="ROOT",
                                         assigned_to='JOBCONTRACT-1',
-                                        action='ACTION-2',
-                                        scope='all',
-                                        maximum=-1)
+                                        action='ACTION-2')
 
         root_c_a_3 = Acd.AssignedAction(code='ASSIGNEDACTION-3',
                                         serial=3,
                                         base="ROOT",
                                         assigned_to='JOBCONTRACT-1',
-                                        action='ACTION-3',
-                                        scope='all',
-                                        maximum=-1)
+                                        action='ACTION-3')
 
         root_c_a_4 = Acd.AssignedAction(code='ASSIGNEDACTION-4',
                                         serial=4,
                                         base="ROOT",
                                         assigned_to='JOBCONTRACT-1',
-                                        action='ACTION-4',
-                                        scope='all',
-                                        maximum=-1)
+                                        action='ACTION-4')
 
         root_delegation = Acd.AssignedAction(code='ASSIGNEDACTION-5',
                                              serial=5,
@@ -353,9 +340,7 @@ class H3AlchemyRemoteDB:
                                              action='ACTION-5',
                                              start_date=datetime.date(1900, 1, 1),
                                              end_date=datetime.date(3000, 6, 6),
-                                             delegated_from='JOBCONTRACT-1',
-                                             scope='all',
-                                             maximum=-1)
+                                             delegated_from='JOBCONTRACT-1')
 
         initial_sync_entry = Acd.SyncJournal(origin='JOBCONTRACT-1',
                                              type="INIT",

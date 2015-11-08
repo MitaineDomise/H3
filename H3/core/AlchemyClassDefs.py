@@ -23,11 +23,11 @@ class WorkBase(Base, Versioned):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
-    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie SHB
+    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True, nullable=False)
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -57,7 +57,7 @@ class User(Base, Versioned):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     login = sqlalchemy.Column(sqlalchemy.String, unique=True)  # i.e ebertolus
@@ -73,7 +73,8 @@ class JobContract(Base):
     """
     Class linking a person, a job and a base for an employment contract.
     Not versioned as should not be modified. Extensions will be new records.
-    Assumed public (global) with a creation year (for later archival).
+    Starts permanent but will get a year at closing (for later archival).
+    Defaults to public but should be set to the base
     """
     __tablename__ = 'job_contracts'
 
@@ -81,10 +82,8 @@ class JobContract(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
-    period = sqlalchemy.Column(sqlalchemy.String,
-                               nullable=False,
-                               default=datetime.date.today().year)
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
+    period = sqlalchemy.Column(sqlalchemy.String, default="PERMANENT")
 
     user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.code'))
     work_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'), nullable=False)
@@ -123,7 +122,6 @@ class Action(Base):
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     title = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie manage_bases
-    language = sqlalchemy.Column(sqlalchemy.String)  # For localization
     category = sqlalchemy.Column(sqlalchemy.String)  # ie "Stocks management"
     description = sqlalchemy.Column(sqlalchemy.String)
 
@@ -172,8 +170,7 @@ class AssignedAction(Base):
 
     action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
     assigned_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
-    scope = sqlalchemy.Column(sqlalchemy.String)  # ie list of contracts, bases, or projects
-    maximum = sqlalchemy.Column(sqlalchemy.Integer)  # maximum sign-off value
+    limits = sqlalchemy.Column(sqlalchemy.String)  # JSON limiting sign-off value per-project, base, contract...
 
     job_contract_fk = sqlalchemy.orm.relationship('JobContract',
                                                   backref=sqlalchemy.orm.backref('assigned_actions',
@@ -185,6 +182,26 @@ class AssignedAction(Base):
                                                                            cascade="all, delete-orphan"),
                                             foreign_keys=action)
 
+
+# class RoutingRules(Base, Versioned):
+#     """
+#     Class holding the rules governing where a given action should send messages and validation / approval requests
+#
+#     """
+#     ___tablename__ = 'routing_rules'
+#
+#     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
+#     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
+#     base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+#     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
+#
+#     scope = sqlalchemy.Column(sqlalchemy.String)  # "ROOT" for baseline rules, can be base-level or contract-level
+#     action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
+#
+#     routing_action_fk = sqlalchemy.orm.relationship('Action',
+#                                                     backref=sqlalchemy.orm.backref('routing_rules',
+#                                                                                    cascade="all, delete-orphan"),
+#                                                     foreign_keys=action)
 
 class SyncJournal(Base):
     """
@@ -250,4 +267,4 @@ class Message(Base):
 
     # Group of items moving (internal) - incoming goods (proper admin format like waybill etc).
 
-    #  Global tables will have base = ROOT. Codes will be of the form USER-1.
+    #  Global tables will have base = BASE-1. Codes will be of the form USER-1.

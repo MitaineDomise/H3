@@ -121,15 +121,15 @@ def get_lowest_queued_sync_entry(session):
         logger.exception(_("Error getting the Lowest (latest) sync entry serial"))
 
 
-def get_action_description(session, action_id, lang):
+def get_action_description(session, action_id):
     try:
         description = session.query(Acd.Action) \
-            .filter(Acd.Action.code == action_id, Acd.Action.language == lang) \
+            .filter(Acd.Action.code == action_id) \
             .one()
         return description
     except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Error while trying to fetch {lang} description for Action {action_id}")
-                         .format(lang=lang, action_id=action_id))
+        logger.exception(_("Error while trying to fetch description for Action {action_id}")
+                         .format(action_id=action_id))
     finally:
         session.close()
 

@@ -6,6 +6,9 @@ import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
 
+from iso3166 import countries
+import pytz
+
 from H3.core import AlchemyCore
 from H3.core import AlchemyClassDefs as Acd
 
@@ -102,6 +105,14 @@ class SetupWizard:
         :return:
         """
         username = self.wizard.usernameLineEdit.text()
+        # TODO : Make the routing table for actions
+        # TODO : Have global and base "profiles" for sets of actions
+        # TODO : Filter closed bases, banned users, finished JCs at download
+        # TODO : Switch to JSON for action / category descriptions and translations, also scope and limit
+        # TODO : Start Excel import / export work
+        # TODO : start work on image DB
+        # TODO : start work on versioning exploration
+
         # noinspection PyUnusedLocal
         temp_user_ok = self.wizard.user_ok
         if username == "":
@@ -487,10 +498,10 @@ class H3MainGUI:
             item.setStatusTip(desc.description)
             if assigned_action.delegated_from:
                 tooltip = _("Delegated until : {end}.").format(end=assigned_action.end_date)
-                if assigned_action.scope != 'all':
-                    tooltip.append(_("\nScope :  {sc}").format(sc=assigned_action.scope))
-                if assigned_action.maximum != -1:
-                    tooltip.append(_("\nLimit :  {lim}").format(lim=assigned_action.maximum))
+                # if assigned_action.scope != 'all':
+                #     tooltip.append(_("\nScope :  {sc}").format(sc=assigned_action.scope))
+                # if assigned_action.maximum != -1:
+                #     tooltip.append(_("\nLimit :  {lim}").format(lim=assigned_action.maximum))
                 item.setToolTip(tooltip)
                 item.setBackground(QtGui.QBrush(QtCore.Qt.green))
             action_items.append(item)
@@ -546,26 +557,52 @@ class ManageBases:
     Handles the "manage bases" action : UI elements and core interaction.
     """
 
-    def __init__(self, parent_h3_gui):
+    def __init__(self, parent_h3_gui, action=None, base=None):
+        """
+        If called with action != None, jumps to the relevant action on the relevant base
+        :param parent_h3_gui:
+        :param action: create, delete, edit
+        :param base: Acd.WorkBase object
+        :return:
+        """
         self.gui = parent_h3_gui
         self.menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Bases.ui"), self.gui.root_window)
         self.gui.root_window.setCentralWidget(self.menu)
+
+        self.countries_model = QtGui.QStandardItemModel()
+        for c in countries:
+            self.countries_model.appendRow(QtGui.QStandardItem(c.alpha2 + " - " + c.name))
+
+        self.timezones_model = QtGui.QStandardItemModel()
+        for tz in pytz.common_timezones:
+            self.timezones_model.appendRow(QtGui.QStandardItem(tz))
+
         self.bases_tree_model = QtGui.QStandardItemModel()
         self.menu.treeView.setModel(self.bases_tree_model)
-        self.base_selection_model = QtGui.QItemSelectionModel(self.bases_tree_model)
         self.refresh_tree()
 
         self.base_selection_model = self.menu.treeView.selectionModel()
         self.base_selection_model.currentChanged.connect(self.update_stats)
 
-        self.menu.createButton.clicked.connect(self.create_base_box)
-        # self.menu.editButton.clicked.connect(self.edit_box)
-        # self.menu.deleteButton.clicked.connect(self.delete_box)
+        self.menu.createButton.clicked.connect(self.create_base)
+        self.menu.editButton.clicked.connect(self.edit_base)
+        self.menu.deleteButton.clicked.connect(self.close_base)
+        self.menu.treeView.activated.connect(self.launch_edit)
+
+        if action == "create":
+            self.create_base(base)
+        if action == "update":
+            self.edit_base(base)
+        if action == "delete":
+            self.close_base(base)
+
+    @QtCore.Slot(int)
+    def launch_edit(self, index):
+        self.edit_base(self.bases_tree_model.itemFromIndex(index).data(33))
 
     def refresh_tree(self):
+        self.bases_tree_model.clear()
         hidden_root = self.bases_tree_model.invisibleRootItem()
-        for i in range(0, hidden_root.rowCount()):
-            hidden_root.removeRow(i)
 
         base_data = AlchemyCore.read_table(Acd.WorkBase)
 
@@ -617,30 +654,56 @@ class ManageBases:
             else:
                 self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
-    def create_base_box(self):
-        row_index = self.base_selection_model.currentIndex()
-        base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
-
-        selected_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
-
+    def create_base(self, base=None):
+        """
+        Creates the dialog box for base creation. If base isn't None, prefill with the info contained
+        :param base: an Acd.Workbase object
+        :return:
+        """
+        # TODO: Switch parent to a QCombobox
+        # TODO : limit visibility to below my home base
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
 
-        create_base_box.parentLabel.setText(selected_base.identifier + " - " + selected_base.full_name)
-        create_base_box.timeZoneComboBox.setModel(QtGui.QStringListModel(["UTC", "GMT"]))
+        create_base_box.countryComboBox.setModel(self.countries_model)
+        create_base_box.timeZoneComboBox.setModel(self.timezones_model)
 
-        create_base_box.openingDateDateEdit.setDate(datetime.date.today())
+        create_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
+
+        if base:
+            create_base_box.baseCodeLineEdit.setText(base.identifier)
+            parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
+            if parent_base:
+                create_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+            create_base_box.fullNameLineEdit.setText(base.full_name)
+            create_base_box.openingDateDateEdit.setDate(base.opened_date)
+            create_base_box.countryComboBox.setCurrentIndex(
+                create_base_box.countryComboBox.findText(base.country, QtCore.Qt.MatchStartsWith))
+            self.update_timezones(base.country)
+            create_base_box.timeZoneComboBox.setCurrentIndex(
+                create_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly)
+            )
+        else:
+            row_index = self.base_selection_model.currentIndex()
+            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
+            parent_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+            create_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+            create_base_box.openingDateDateEdit.setDate(datetime.date.today())
+            create_base_box.countryComboBox.setCurrentIndex(
+                create_base_box.countryComboBox.findText(parent_base.country, QtCore.Qt.MatchStartsWith))
+            self.update_timezones(parent_base.country)
 
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
             # noinspection PyArgumentList
             new_base = Acd.WorkBase(base="BASE-1",
                                     period="PERMANENT",
-                                    parent=selected_base.code,
+                                    parent=parent_base.code or None,
                                     identifier=create_base_box.baseCodeLineEdit.text(),
                                     full_name=create_base_box.fullNameLineEdit.text(),
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
-                                    country=create_base_box.counTryCodeLineEdit.text(),
+                                    country=create_base_box.countryComboBox.currentText()[0:2],
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
+
             if H3Core.create_base(new_base) == "OK":
                 self.refresh_tree()
             else:
@@ -649,6 +712,83 @@ class ManageBases:
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
+
+    def edit_base(self, base=None):
+        """
+        Creates the dialog box for base creation. If base isn't None, prefill with the info contained
+        :param base: an Acd.Workbase object
+        :return:
+        """
+        edit_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/EditBaseBox.ui"),
+                                                   self.gui.root_window)
+
+        edit_base_box.countryComboBox.setModel(self.countries_model)
+        edit_base_box.timeZoneComboBox.setModel(self.timezones_model)
+
+        edit_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
+
+        if not base:
+            row_index = self.base_selection_model.currentIndex()
+            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
+            base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+
+        edit_base_box.baseCodeLineEdit.setText(base.identifier)
+        parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
+        if parent_base:
+            edit_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+
+        edit_base_box.fullNameLineEdit.setText(base.full_name)
+        edit_base_box.openingDateDateEdit.setDate(base.opened_date)
+        edit_base_box.countryComboBox.setCurrentIndex(
+            edit_base_box.countryComboBox.findText(base.country, QtCore.Qt.MatchStartsWith))
+        self.update_timezones(base.country)
+        edit_base_box.timeZoneComboBox.setCurrentIndex(
+            edit_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly))
+
+        if edit_base_box.exec_() == QtGui.QDialog.Accepted:
+            base.parent = parent_base.code or None
+            base.identifier = edit_base_box.baseCodeLineEdit.text()
+            base.full_name = edit_base_box.fullNameLineEdit.text()
+            base.opened_date = edit_base_box.openingDateDateEdit.date().toPython()
+            base.country = edit_base_box.countryComboBox.currentText()[0:2]
+            base.time_zone = edit_base_box.timeZoneComboBox.currentText()
+
+            if H3Core.update_base(base) == "OK":
+                self.refresh_tree()
+            else:
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not modified"),
+                                                _("H3 could not modify this base. Check all data is valid"),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
+
+    def close_base(self, base=None):
+        close_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/DeleteBaseBox.ui"),
+                                                    self.gui.root_window)
+        close_base_box.dateEdit.setDate(datetime.date.today())
+
+        if not base:
+            row_index = self.base_selection_model.currentIndex()
+            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
+            base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+
+        if close_base_box.exec_() == QtGui.QDialog.Accepted:
+            base.closed_date = close_base_box.dateEdit.date().toPython()
+            if H3Core.update_base(base) == "OK":
+                self.refresh_tree()
+            else:
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not closed"),
+                                                _("H3 could not close this base. Check all data is valid"),
+                                                QtGui.QMessageBox.Ok)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                message_box.exec_()
+
+    @QtCore.Slot(str)
+    def update_timezones(self, country):
+        list = pytz.country_timezones(country[0:2])
+        self.timezones_model.clear()
+        for tz in list:
+            self.timezones_model.appendRow(QtGui.QStandardItem(tz))
 
 
 def run():

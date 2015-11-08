@@ -221,6 +221,22 @@ def get_highest_serial(session, mapped_class, base_code):
                          .format(cls=mapped_class))
 
 
+def get_highest_non_temp_serial(session, mapped_class, base_code):
+    try:
+        max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
+            .filter(mapped_class.base == base_code, mapped_class.code.notlike("TMP-%")) \
+            .one()
+        logger.debug(_("Highest (final) serial for class {mapped} in local is {no}")
+                     .format(mapped=mapped_class, no=max_num.max))
+        return max_num.max if max_num.max else 0
+    except sqlalchemy.orm.exc.NoResultFound:
+        logger.info(_("No entries for this class, serial defaulted to 0"))
+        return 0
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Error getting the highest serial for class {cls}")
+                         .format(cls=mapped_class))
+
+
 def subtree(session, root_base_pkey):
     """
     Queries local database for the organisational tree, then walks it to extract a list of sub-bases

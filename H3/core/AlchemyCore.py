@@ -306,51 +306,63 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
-        self.prepare_record(base, local_session)
-        sync_entry = self.prepare_sync_entry(base, local_session)
+        self.record_incrementer(base, local_session)
+        code_builder(base)
+        sync_entry = self.prepare_sync_entry(base, local_session, "CREATE")
         try:
             local_session.add(base)
             local_session.add(sync_entry)
             local_session.commit()
             return "OK"
         except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to create base"))
             local_session.rollback()
             return "ERR"
         finally:
             local_session.close()
 
-    def prepare_sync_entry(self, record, session):
+    def update_base(self, base):
+        """
+        Prepares the record and sync entry to submit to local DB
+        :param base:
+        :return:
+        """
+        local_session = SessionLocal()
+        sync_entry = self.prepare_sync_entry(base, local_session, "UPDATE")
+        try:
+            local_session.merge(base)
+            local_session.add(sync_entry)
+            local_session.commit()
+            return "OK"
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("Failed to update base"))
+            local_session.rollback()
+            return "ERR"
+        finally:
+            local_session.close()
+
+    def prepare_sync_entry(self, record, session, type):
         self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(session)
         self.queue_cursor -= 1
         sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
                                      origin=self.current_job_contract.code,
-                                     type="CREATE",
+                                     type=type,
                                      table="bases",
                                      key=record.code,
                                      status="UNSUBMITTED",
                                      local_timestamp=datetime.datetime.utcnow())
         return sync_entry
 
-    def prepare_record(self, record, session):
+    def record_incrementer(self, record, session):
         """
-        Get a new TMP number with incremented serial and PKey.
-        Builds a human-readable primary key out of the serial and meta fields of the record.
-        Global records have base = GLOBAL and will not have this prefix
-        Permanent records (never archived) have period = PERMANENT and the year / quarter etc will not appear
-        Examples : SHB-REQUISITION-2015-172 , USER-324
+        generates a new serial, for a brand new record.
         :param record:
         :return:
         """
         mapper = sqlalchemy.inspect(record).mapper
         table = mapper.local_table.name
-        self.extract_current_serials(session)
-        record.serial = self.serials[table][record.base] + 1
-        base = record.base.join("-") if record.base != 'BASE-1' else ''
-        period = record.period.join("-") if record.period != 'PERMANENT' else ''
-        record.code = "TMP-{base}{prefix}-{period}{serial}".format(base=base,
-                                                                   prefix=mapper.class_.prefix,
-                                                                   period=period,
-                                                                   serial=record.serial)
+        self.serials[table][record.base] = AlchemyGeneric.get_highest_serial(session, mapper.class_, record.base) + 1
+        record.serial = self.serials[table][record.base]
 
     def sync_up(self):
         """
@@ -377,13 +389,12 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
-        remote_session = SessionRemote()
-        self.extract_current_serials(remote_session)
-        remote_session.close()
+        self.extract_current_serials(local_session, non_temp=True)
         entries = AlchemyLocal.get_sync_queue(local_session)
 
         if entries:
             serials = self.serials.copy()
+            result = "ok"
 
             for entry in entries:
                 # Every entry in the queue gets checked, "modified" or not. Grab the referenced record
@@ -400,10 +411,10 @@ class H3AlchemyCore:
                 if new_serial != record.serial:
                     entry.status = "MODIFIED"
                     record.serial = new_serial
-                    self.prepare_record(record, local_session)
+                    code_builder(record)
                 # post a new "unsubmitted" entry with the corrected serial and code.
                 # the old entry's status gets updated, pointing to the new TMP-key for that record.
-                if entry.status == "MODIFIED":
+                if entry.status == "MODIFIED":  # Modified this pass only (no suffix)
                     new_entry = entry.copy()
                     self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
                     self.queue_cursor -= 1
@@ -412,15 +423,22 @@ class H3AlchemyCore:
                     new_entry.status = "UNSUBMITTED"
                     new_entry.local_timestamp = datetime.datetime.utcnow()
 
-                    entry.status = "MODIFIED-".join(record.code)
+                    entry.status = "MODIFIED-" + record.code
 
-                    local_session.merge(record)
-                    local_session.merge(entry)
-                    local_session.merge(new_entry)
-            local_session.commit()
+                    try:
+                        local_session.merge(record)
+                        local_session.merge(entry)
+                        local_session.add(new_entry)
+                    except sqlalchemy.exc.SQLAlchemyError:
+                        result = "err"
+            if result == "ok":
+                local_session.commit()
+            else:
+                logger.exception(_("rebase of upload queue has failed"))
+                local_session.rollback()
         local_session.close()
 
-    def extract_current_serials(self, session):
+    def extract_current_serials(self, session, non_temp=False):
         """
         At login, populates the dict of dicts keeping track of the current highest serial for all transactions
         :return:
@@ -432,7 +450,10 @@ class H3AlchemyCore:
                 self.serials.update({table: dict()})
                 mapped_class = get_class_by_table_name(table)
                 for base in self.local_bases:
-                    highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base.code)
+                    if non_temp:
+                        highest = AlchemyGeneric.get_highest_non_temp_serial(session, mapped_class, base.code)
+                    else:
+                        highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base.code)
                     self.serials[table].update({base.code: highest})
 
     def sync_down(self):
@@ -455,6 +476,22 @@ class H3AlchemyCore:
             process_downloaded_updates(entries, records)
 
             # self.rebase_queued_updates()
+
+
+def code_builder(record):
+    """
+    Builds a human-readable primary key out of the serial and meta fields of the record.
+    Global records have base = GLOBAL and will not have this prefix
+    Permanent records (never archived) have period = PERMANENT and the year / quarter etc will not appear
+    Examples : SHB-REQUISITION-2015-172 , USER-324
+    """
+    mapper = sqlalchemy.inspect(record).mapper
+    base = record.base.join("-") if record.base != 'BASE-1' else ''
+    period = record.period.join("-") if record.period != 'PERMANENT' else ''
+    record.code = "TMP-{base}{prefix}-{period}{serial}".format(base=base,
+                                                               prefix=mapper.class_.prefix,
+                                                               period=period,
+                                                               serial=record.serial)
 
 
 def process_downloaded_updates(entries, records):
@@ -566,8 +603,9 @@ def submit_updates_for_upload(entries):
 
 def get_action_description(action_id, language):
     local_session = SessionLocal()
-    action_desc = AlchemyLocal.get_action_description(local_session, action_id, language)
+    action_desc = AlchemyLocal.get_action_description(local_session, action_id)
     local_session.close()
+    # TODO : JSON decode the language-appropriate stuff
     return action_desc
 
 
