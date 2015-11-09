@@ -5,6 +5,7 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
+
 from iso3166 import countries
 import pytz
 
@@ -104,7 +105,7 @@ class SetupWizard:
         :return:
         """
         username = self.wizard.usernameLineEdit.text()
-        # TODO : Make the routing table for actions
+        # TODO : Make the mail routing table for actions
         # TODO : Have global and base "profiles" for sets of actions
         # TODO : Filter closed bases, banned users, finished JCs at download
         # TODO : Switch to JSON for scope and limit
@@ -577,9 +578,9 @@ class ManageBases:
 
         self.bases_tree_model = QtGui.QStandardItemModel()
         self.menu.treeView.setModel(self.bases_tree_model)
-        self.refresh_tree()
-
         self.base_selection_model = self.menu.treeView.selectionModel()
+        self.refresh_tree(H3Core.current_job_contract.work_base)
+
         self.base_selection_model.currentChanged.connect(self.update_stats)
 
         self.menu.createButton.clicked.connect(self.create_base)
@@ -598,7 +599,7 @@ class ManageBases:
     def launch_edit(self, index):
         self.edit_base(self.bases_tree_model.itemFromIndex(index).data(33))
 
-    def refresh_tree(self):
+    def refresh_tree(self, base_code):
         self.bases_tree_model.clear()
         hidden_root = self.bases_tree_model.invisibleRootItem()
 
@@ -608,8 +609,10 @@ class ManageBases:
         next_row = list()
 
         for record in base_data:
-            if record.parent == record.code:
-                root_record = base_data.pop(base_data.index(record))
+            if record.code == base_code:
+                root_record = record
+                if record.parent == record.code:
+                    _record = base_data.pop(base_data.index(record))
                 root_item = QtGui.QStandardItem(root_record.identifier)
                 root_desc = QtGui.QStandardItem(root_record.full_name)
                 root_item.setData(root_record, 33)  # includes the base object itself in the first custom data role
@@ -659,7 +662,6 @@ class ManageBases:
         :return:
         """
         # TODO: Switch parent to a QCombobox
-        # TODO : limit visibility to below my home base
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
 
@@ -703,7 +705,7 @@ class ManageBases:
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
 
             if H3Core.create_base(new_base) == "OK":
-                self.refresh_tree()
+                self.refresh_tree(H3Core.current_job_contract.work_base)
             else:
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not created"),
                                                 _("H3 could not create this base. Check all data is valid"),
@@ -752,7 +754,7 @@ class ManageBases:
             base.time_zone = edit_base_box.timeZoneComboBox.currentText()
 
             if H3Core.update_base(base) == "OK":
-                self.refresh_tree()
+                self.refresh_tree(H3Core.current_job_contract.work_base)
             else:
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not modified"),
                                                 _("H3 could not modify this base. Check all data is valid"),
@@ -773,7 +775,7 @@ class ManageBases:
         if close_base_box.exec_() == QtGui.QDialog.Accepted:
             base.closed_date = close_base_box.dateEdit.date().toPython()
             if H3Core.update_base(base) == "OK":
-                self.refresh_tree()
+                self.refresh_tree(H3Core.current_job_contract.work_base)
             else:
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("Base not closed"),
                                                 _("H3 could not close this base. Check all data is valid"),
