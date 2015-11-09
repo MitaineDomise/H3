@@ -3,6 +3,7 @@ __author__ = 'Man'
 import datetime
 import logging
 import hashlib
+import json
 
 import sqlalchemy
 import sqlalchemy.exc
@@ -236,8 +237,7 @@ class H3AlchemyRemoteDB:
                              pw_hash='secret',
                              first_name='Administrator',
                              last_name='H3',
-                             created_date=datetime.date.today(),
-                             banned_date=datetime.date(3000, 6, 6))
+                             created_date=datetime.date.today())
 
         reader_user = Acd.User(code='USER-2',
                                serial=2,
@@ -247,8 +247,7 @@ class H3AlchemyRemoteDB:
                                pw_hash='weak',
                                first_name='Reader',
                                last_name='H3',
-                               created_date=datetime.date.today(),
-                               banned_date=datetime.date(3000, 6, 6))
+                               created_date=datetime.date.today())
 
         root_base = Acd.WorkBase(code='BASE-1',
                                  serial=1,
@@ -258,8 +257,7 @@ class H3AlchemyRemoteDB:
                                  parent='BASE-1',
                                  full_name='Hierarchy root',
                                  opened_date=datetime.date.today(),
-                                 closed_date=datetime.date(3000, 6, 6),
-                                 country='XX',
+                                 country='GB',
                                  time_zone='UTC')
 
         root_job = Acd.Job(code='JOB-1',
@@ -281,33 +279,38 @@ class H3AlchemyRemoteDB:
 
         root_a_1 = Acd.Action(code='ACTION-1',
                               serial=1,
-                              title='manage_users',
-                              category="FP Stuff",
-                              description="Manage users")
+                              identifier='manage_users',
+                              category='FP',
+                              language=json.dumps({'en_UK': {'desc': _("Manage users"),
+                                                             'cat': _("FP Stuff")}}))
 
         root_a_2 = Acd.Action(code='ACTION-2',
                               serial=2,
-                              title='manage_bases',
-                              category="FP Stuff",
-                              description="Manage bases")
+                              identifier='manage_bases',
+                              category='FP',
+                              language=json.dumps({'en_UK': {'desc': _("Manage bases"),
+                                                             'cat': _("FP Stuff")}}))
 
         root_a_3 = Acd.Action(code='ACTION-3',
                               serial=3,
-                              title='manage_jobs',
-                              category="FP Stuff",
-                              description="Manage jobs")
+                              identifier='manage_jobs',
+                              category='FP',
+                              language=json.dumps({'en_UK': {'desc': _("Manage jobs"),
+                                                             'cat': _("FP Stuff")}}))
 
         root_a_4 = Acd.Action(code='ACTION-4',
                               serial=4,
-                              title='manage_job_contracts',
-                              category="FP Stuff",
-                              description="Manage job contracts")
+                              identifier='manage_job_contracts',
+                              category='FP',
+                              language=json.dumps({'en_UK': {'desc': _("Manage job contracts"),
+                                                             'cat': _("FP Stuff")}}))
 
         root_a_5 = Acd.Action(code='ACTION-5',
                               serial=5,
-                              title='manage_assigned_actions',
-                              category="FP Stuff",
-                              description="Manage assigned actions")
+                              identifier='manage_assigned_actions',
+                              category='FP',
+                              language=json.dumps({'en_UK': {'desc': _("Manage assigned actions"),
+                                                             'cat': _("FP Stuff")}}))
 
         root_c_a_1 = Acd.AssignedAction(code='ASSIGNEDACTION-1',
                                         serial=1,

@@ -5,7 +5,6 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
-
 from iso3166 import countries
 import pytz
 
@@ -108,7 +107,7 @@ class SetupWizard:
         # TODO : Make the routing table for actions
         # TODO : Have global and base "profiles" for sets of actions
         # TODO : Filter closed bases, banned users, finished JCs at download
-        # TODO : Switch to JSON for action / category descriptions and translations, also scope and limit
+        # TODO : Switch to JSON for scope and limit
         # TODO : Start Excel import / export work
         # TODO : start work on image DB
         # TODO : start work on versioning exploration
@@ -490,12 +489,11 @@ class H3MainGUI:
         action_items = list()
 
         for assigned_action in H3Core.assigned_actions:
-            desc = AlchemyCore.get_action_description(assigned_action.action, H3Core.language)
-            categories.add(desc.category)
-            item = QtGui.QStandardItem(desc.description)
+            action = AlchemyCore.get_from_primary_key(Acd.Action, assigned_action.action)
+            categories.add(AlchemyCore.json_read(action.language, H3Core.language, 'cat'))
+            item = QtGui.QStandardItem(AlchemyCore.json_read(action.language, H3Core.language, 'desc'))
             item.setData(assigned_action, 33)
-            item.setData(desc, 34)
-            item.setStatusTip(desc.description)
+            item.setData(action, 34)
             if assigned_action.delegated_from:
                 tooltip = _("Delegated until : {end}.").format(end=assigned_action.end_date)
                 # if assigned_action.scope != 'all':
@@ -512,7 +510,7 @@ class H3MainGUI:
             cat_item = QtGui.QStandardItem(cat)
             for item in action_items:
                 action = item.data(34)
-                if action.category == cat:
+                if AlchemyCore.json_read(action.language, H3Core.language, 'cat') == cat:
                     cat_item.appendRow(item)
             model.appendRow(cat_item)
 
@@ -537,7 +535,7 @@ class H3MainGUI:
         """
         action = ""
         if action_menu_item.data(34):
-            action = action_menu_item.data(34).title
+            action = action_menu_item.data(34).identifier
         if action == 'manage_bases':
             self.current_screen = ManageBases(self)
 

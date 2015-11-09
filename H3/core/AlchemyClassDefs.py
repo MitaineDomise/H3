@@ -121,9 +121,9 @@ class Action(Base):
     base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    title = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie manage_bases
-    category = sqlalchemy.Column(sqlalchemy.String)  # ie "Stocks management"
-    description = sqlalchemy.Column(sqlalchemy.String)
+    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie manage_bases
+    category = sqlalchemy.Column(sqlalchemy.String)  # ie FP
+    language = sqlalchemy.Column(sqlalchemy.String)  # JSON-encoded dict(locale) of dicts with desc and cat
 
 
 class Job(Base):

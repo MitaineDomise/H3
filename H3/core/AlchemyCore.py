@@ -4,6 +4,7 @@ import configparser
 import logging
 import datetime
 import os
+import json
 
 import sqlalchemy.orm
 import sqlalchemy.exc
@@ -42,7 +43,7 @@ class H3AlchemyCore:
         self.serials = dict()
         self.queue_cursor = 0
 
-        self.language = "EN_UK"
+        self.language = "en_UK"
 
         self.options = configparser.ConfigParser()
 
@@ -601,12 +602,8 @@ def submit_updates_for_upload(entries):
     return upward_sync_status
 
 
-def get_action_description(action_id, language):
-    local_session = SessionLocal()
-    action_desc = AlchemyLocal.get_action_description(local_session, action_id)
-    local_session.close()
-    # TODO : JSON decode the language-appropriate stuff
-    return action_desc
+def json_read(data, lang, field):
+    return json.loads(data)[lang][field]
 
 
 def get_user_count(base_code):
