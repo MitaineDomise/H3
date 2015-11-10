@@ -5,7 +5,6 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
-
 from iso3166 import countries
 import pytz
 
@@ -570,7 +569,12 @@ class ManageBases:
 
         self.countries_model = QtGui.QStandardItemModel()
         for c in countries:
-            self.countries_model.appendRow(QtGui.QStandardItem(c.alpha2 + " - " + c.name))
+            item = QtGui.QStandardItem(_("{code} - {fullname}")
+                                       .format(code=c.alpha2, fullname=c.name))
+            item.setData(c.alpha2, 33)
+            self.countries_model.appendRow(item)
+
+        self.parents_model = QtGui.QStandardItemModel()
 
         self.timezones_model = QtGui.QStandardItemModel()
         for tz in pytz.common_timezones:
@@ -608,6 +612,12 @@ class ManageBases:
         tree_row = list()
         next_row = list()
 
+        for p in base_data:
+            item = QtGui.QStandardItem(_("{code} - {fullname}")
+                                       .format(code=p.identifier, fullname=p.full_name))
+            item.setData(p, 33)
+            self.parents_model.appendRow(item)
+
         for record in base_data:
             if record.code == base_code:
                 root_record = record
@@ -629,6 +639,11 @@ class ManageBases:
                         base_desc = QtGui.QStandardItem(base.full_name)
                         base_item.setData(base, 33)
                         parent_child_no = parent.rowCount()
+                        if base.closed_date and base.closed_date <= datetime.date.today():
+                            base_item.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
+                            base_desc.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
+                            base_desc.setText(_("{name} - closed on {date}")
+                                              .format(name=base.full_name, date=base.closed_date))
                         parent.setChild(parent_child_no, 0, base_item)
                         parent.setChild(parent_child_no, 1, base_desc)
                         next_row.append(base_item)
@@ -643,17 +658,20 @@ class ManageBases:
         self.menu.treeView.resizeColumnToContents(1)
 
     @QtCore.Slot(int)
-    def update_stats(self, base_index):
-        if not base_index:
+    def update_stats(self, _index):
+        row_index = self.base_selection_model.currentIndex()
+        base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
+        base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+        if not base:
             self.menu.opendate.setText("-")
             self.menu.userno.setText("-")
-        elif base_index.data(33):
-            self.menu.openDate.setText(str(base_index.data(33).opened_date))
-            count = AlchemyCore.get_user_count(base_index.data(33).code)
-            if count:
-                self.menu.userNo.setText(str(count))
-            else:
-                self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
+        else:
+            self.menu.openDate.setText(str(base.opened_date))
+            # count = AlchemyCore.get_user_count(base_index.data(33).code)
+            # if count:
+            #     self.menu.userNo.setText(str(count))
+            # else:
+            #     self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base(self, base=None):
         """
@@ -661,12 +679,13 @@ class ManageBases:
         :param base: an Acd.Workbase object
         :return:
         """
-        # TODO: Switch parent to a QCombobox
+        # TODO : Make core check you have the proper rights
         create_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/CreateBaseBox.ui"),
                                                      self.gui.root_window)
 
         create_base_box.countryComboBox.setModel(self.countries_model)
         create_base_box.timeZoneComboBox.setModel(self.timezones_model)
+        create_base_box.parentComboBox.setModel(self.parents_model)
 
         create_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
 
@@ -674,7 +693,8 @@ class ManageBases:
             create_base_box.baseCodeLineEdit.setText(base.identifier)
             parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
             if parent_base:
-                create_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+                create_base_box.parentComboBox.setCurrentIndex(
+                    create_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
             create_base_box.fullNameLineEdit.setText(base.full_name)
             create_base_box.openingDateDateEdit.setDate(base.opened_date)
             create_base_box.countryComboBox.setCurrentIndex(
@@ -687,7 +707,8 @@ class ManageBases:
             row_index = self.base_selection_model.currentIndex()
             base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
             parent_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
-            create_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+            create_base_box.parentComboBox.setCurrentIndex(
+                create_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
             create_base_box.openingDateDateEdit.setDate(datetime.date.today())
             create_base_box.countryComboBox.setCurrentIndex(
                 create_base_box.countryComboBox.findText(parent_base.country, QtCore.Qt.MatchStartsWith))
@@ -695,13 +716,16 @@ class ManageBases:
 
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
             # noinspection PyArgumentList
+
             new_base = Acd.WorkBase(base="BASE-1",
                                     period="PERMANENT",
-                                    parent=parent_base.code or None,
+                                    parent=create_base_box.parentComboBox.itemData(
+                                        create_base_box.parentComboBox.currentIndex(), 33).code or None,
                                     identifier=create_base_box.baseCodeLineEdit.text(),
                                     full_name=create_base_box.fullNameLineEdit.text(),
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
-                                    country=create_base_box.countryComboBox.currentText()[0:2],
+                                    country=create_base_box.countryComboBox.itemData(
+                                        create_base_box.countryComboBox.currentIndex(), 33),
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
 
             if H3Core.create_base(new_base) == "OK":
@@ -724,6 +748,7 @@ class ManageBases:
 
         edit_base_box.countryComboBox.setModel(self.countries_model)
         edit_base_box.timeZoneComboBox.setModel(self.timezones_model)
+        edit_base_box.parentComboBox.setModel(self.parents_model)
 
         edit_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
 
@@ -735,7 +760,8 @@ class ManageBases:
         edit_base_box.baseCodeLineEdit.setText(base.identifier)
         parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
         if parent_base:
-            edit_base_box.parentLabel.setText(parent_base.identifier + " - " + parent_base.full_name)
+            edit_base_box.parentComboBox.setCurrentIndex(
+                edit_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
 
         edit_base_box.fullNameLineEdit.setText(base.full_name)
         edit_base_box.openingDateDateEdit.setDate(base.opened_date)
@@ -746,11 +772,13 @@ class ManageBases:
             edit_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly))
 
         if edit_base_box.exec_() == QtGui.QDialog.Accepted:
-            base.parent = parent_base.code or None
+            base.parent = edit_base_box.parentComboBox.itemData(
+                edit_base_box.parentComboBox.currentIndex(), 33).code or None
             base.identifier = edit_base_box.baseCodeLineEdit.text()
             base.full_name = edit_base_box.fullNameLineEdit.text()
             base.opened_date = edit_base_box.openingDateDateEdit.date().toPython()
-            base.country = edit_base_box.countryComboBox.currentText()[0:2]
+            base.country = edit_base_box.countryComboBox.itemData(
+                edit_base_box.countryComboBox.currentIndex(), 33)
             base.time_zone = edit_base_box.timeZoneComboBox.currentText()
 
             if H3Core.update_base(base) == "OK":
@@ -785,9 +813,9 @@ class ManageBases:
 
     @QtCore.Slot(str)
     def update_timezones(self, country):
-        list = pytz.country_timezones(country[0:2])
+        tz_list = pytz.country_timezones(country[0:2])
         self.timezones_model.clear()
-        for tz in list:
+        for tz in tz_list:
             self.timezones_model.appendRow(QtGui.QStandardItem(tz))
 
 

@@ -307,9 +307,11 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
+        # self.get_authorizations('create_base', local_session)
         self.record_incrementer(base, local_session)
         code_builder(base)
         sync_entry = self.prepare_sync_entry(base, local_session, "CREATE")
+
         try:
             local_session.add(base)
             local_session.add(sync_entry)
@@ -329,7 +331,11 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
+        for child in AlchemyGeneric.subtree(local_session, base.code):
+            if base.parent == child:
+                return "ERR"
         sync_entry = self.prepare_sync_entry(base, local_session, "UPDATE")
+
         try:
             local_session.merge(base)
             local_session.add(sync_entry)
@@ -342,12 +348,12 @@ class H3AlchemyCore:
         finally:
             local_session.close()
 
-    def prepare_sync_entry(self, record, session, type):
+    def prepare_sync_entry(self, record, session, entry_type):
         self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(session)
         self.queue_cursor -= 1
         sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
                                      origin=self.current_job_contract.code,
-                                     type=type,
+                                     type=entry_type,
                                      table="bases",
                                      key=record.code,
                                      status="UNSUBMITTED",
