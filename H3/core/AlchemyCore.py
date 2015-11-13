@@ -12,6 +12,7 @@ import sqlalchemy.exc
 from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from . import AlchemyClassDefs as Acd
 from .AlchemyTemporal import versioned_session
+from ..xllent import xlexport
 
 SessionRemote = sqlalchemy.orm.sessionmaker()
 SessionLocal = sqlalchemy.orm.sessionmaker()
@@ -378,15 +379,19 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
+        remote_session = SessionRemote()
+        deletion_session = SessionLocal()
         entries = AlchemyLocal.get_sync_queue(local_session)
-        local_session.close()
-        result = submit_updates_for_upload(entries)
+        result = submit_updates_for_upload(entries, local_session, remote_session, deletion_session)
         if result == "conflict":
             self.sync_down()
             self.rebase_queued_updates()
             self.sync_up()
         elif result == "success":
             self.sync_down()
+        deletion_session.close()
+        remote_session.close()
+        local_session.close()
 
     def rebase_queued_updates(self):
         """After a failed upward sync, updates the upload queue with valid serials and codes
@@ -452,6 +457,7 @@ class H3AlchemyCore:
         """
         self.serials = dict()
 
+
         for table in Acd.Base.metadata.tables:
             if table != "journal_entries" and not table.endswith("_history"):
                 self.serials.update({table: dict()})
@@ -470,20 +476,40 @@ class H3AlchemyCore:
         """
         local_session = SessionLocal()
         current_cursor = AlchemyGeneric.get_highest_synced_sync_entry(local_session)
-        local_session.close()
 
         remote_session = SessionRemote()
         entries, records = AlchemyRemote.get_updates(remote_session,
                                                      current_cursor,
                                                      self.local_bases,
                                                      self.local_job_contracts)
-        remote_session.close()
 
         if entries and records:
-            process_downloaded_updates(entries, records)
+            process_downloaded_updates(entries, records, local_session)
 
-            # self.rebase_queued_updates()
+        local_session.close()
+        remote_session.close()
 
+        # self.rebase_queued_updates()
+
+    def export_bases(self):
+        timestamp = datetime.datetime.now().strftime('%c').replace('/', '-').replace(':', '.')
+        local_session = SessionLocal()
+        bases = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
+        local_session.close()
+        filename = xlexport.bases_writer(bases, timestamp)
+        return filename
+
+
+def open_exported(filename):
+    """
+    This is windows-only at the moment
+    :param filename:
+    :return:
+    """
+    try:
+        os.startfile(filename)
+    except OSError:
+        logger.exception(_("Operation is not supported in this system"))
 
 def code_builder(record):
     """
@@ -501,7 +527,7 @@ def code_builder(record):
                                                                serial=record.serial)
 
 
-def process_downloaded_updates(entries, records):
+def process_downloaded_updates(entries, records, local_session):
     """Records updates from the main DB as-is.
 
     :param entries: the Acd.SyncJournal objects pointing to records to process
@@ -512,8 +538,6 @@ def process_downloaded_updates(entries, records):
     # hundred_percent = len(updates)  # Preparing for progress bar...
     down_sync_status = "success"
     result = ""
-    local_session = SessionLocal()
-    remote_session = SessionRemote()
     for entry in entries:
         record_to_process = None
         for record in records:
@@ -529,20 +553,17 @@ def process_downloaded_updates(entries, records):
         if result != "ok":
 
             down_sync_status = "error"
-    remote_session.close()
     return down_sync_status
 
 
-def submit_updates_for_upload(entries):
+def submit_updates_for_upload(entries, local_session, remote_session, deletion_session):
     """
     Tries an optimistic upload of unsubmitted updates.
     :param entries:
     :return: synchronization result : success, error or conflict (needs to rebase)
     """
     upward_sync_status = "success"
-    local_session = SessionLocal()
-    deletion_session = SessionLocal()
-    remote_session = SessionRemote()
+
     versioned_session(remote_session)
     for entry in entries:
         # The process only tries to upload "unsubmitted" updates.
@@ -601,23 +622,11 @@ def submit_updates_for_upload(entries):
         deletion_session.commit()
         remote_session.rollback()
 
-    deletion_session.close()
-    local_session.close()
-    remote_session.close()
-
     return upward_sync_status
 
 
 def json_read(data, lang, field):
     return json.loads(data)[lang][field]
-
-
-def get_user_count(base_code):
-    remote_session = SessionRemote()
-    count = AlchemyRemote.user_count(remote_session, base_code)
-    remote_session.close()
-    return count
-
 
 def ping_local(location):
     """
@@ -712,6 +721,14 @@ def read_table(class_of_table, location="local"):
     session.close()
     return table
 
+
+def get_user_count(base_code, location="local"):
+    session = SessionLocal()
+    if location == "remote":
+        session = SessionRemote()
+    count = AlchemyGeneric.user_count(session, base_code)
+    session.close()
+    return count
 
 def get_from_primary_key(mapped_class, pkey, location="local"):
     session = SessionLocal()

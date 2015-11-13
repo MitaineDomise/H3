@@ -5,6 +5,7 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
+
 from iso3166 import countries
 import pytz
 
@@ -104,9 +105,9 @@ class SetupWizard:
         :return:
         """
         username = self.wizard.usernameLineEdit.text()
-        # TODO : Make the mail routing table for actions
         # TODO : Have global and base "profiles" for sets of actions
-        # TODO : Filter closed bases, banned users, finished JCs at download
+        # TODO : Make the mail routing table for actions
+        # TODO : Filter closed bases, banned users, finished JCs at download - Think harder about base closing: final ?
         # TODO : Switch to JSON for scope and limit
         # TODO : Start Excel import / export work
         # TODO : start work on image DB
@@ -415,7 +416,8 @@ class LoginBox:
                 message_box.exec_()
             elif H3Core.internal_state["user"] == "nok":
                 self.login_attempts += 1
-                self.gui.set_status("login failed, " + str((5 - self.login_attempts)) + " remaining")
+                self.gui.set_status(_("login failed, {remaining_attempts} attempts remaining")
+                                    .format(remaining_attempts=str((5 - self.login_attempts))))
             if H3Core.internal_state["base"] == "relocated":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("New base data needed"),
                                                 _("This user is currently affected to a base that is not present in"
@@ -553,6 +555,7 @@ class H3MainGUI:
 class ManageBases:
     """
     Handles the "manage bases" action : UI elements and core interaction.
+    This is an admin-level action that will be allowed to create and edit global data without further approval
     """
 
     def __init__(self, parent_h3_gui, action=None, base=None):
@@ -571,7 +574,7 @@ class ManageBases:
         for c in countries:
             item = QtGui.QStandardItem(_("{code} - {fullname}")
                                        .format(code=c.alpha2, fullname=c.name))
-            item.setData(c.alpha2, 33)
+            item.setData(c, 33)
             self.countries_model.appendRow(item)
 
         self.parents_model = QtGui.QStandardItemModel()
@@ -590,6 +593,8 @@ class ManageBases:
         self.menu.createButton.clicked.connect(self.create_base)
         self.menu.editButton.clicked.connect(self.edit_base)
         self.menu.deleteButton.clicked.connect(self.close_base)
+        self.menu.exportButton.clicked.connect(self.export_bases)
+
         self.menu.treeView.activated.connect(self.launch_edit)
 
         if action == "create":
@@ -725,7 +730,7 @@ class ManageBases:
                                     full_name=create_base_box.fullNameLineEdit.text(),
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.countryComboBox.itemData(
-                                        create_base_box.countryComboBox.currentIndex(), 33),
+                                        create_base_box.countryComboBox.currentIndex(), 33)[1],
                                     time_zone=create_base_box.timeZoneComboBox.currentText())
 
             if H3Core.create_base(new_base) == "OK":
@@ -778,7 +783,7 @@ class ManageBases:
             base.full_name = edit_base_box.fullNameLineEdit.text()
             base.opened_date = edit_base_box.openingDateDateEdit.date().toPython()
             base.country = edit_base_box.countryComboBox.itemData(
-                edit_base_box.countryComboBox.currentIndex(), 33)
+                edit_base_box.countryComboBox.currentIndex(), 33)[1]
             base.time_zone = edit_base_box.timeZoneComboBox.currentText()
 
             if H3Core.update_base(base) == "OK":
@@ -810,6 +815,17 @@ class ManageBases:
                                                 QtGui.QMessageBox.Ok)
                 message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
                 message_box.exec_()
+
+    def export_bases(self):
+        filename = H3Core.export_bases()
+        message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("Base data exported successfully"),
+                                        _("Base data has been exported to the file {file}. Do you want"
+                                          " to open it ?")
+                                        .format(file=filename),
+                                        QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel)
+        message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+        if message_box.exec_() == QtGui.QMessageBox.Ok:
+            AlchemyCore.open_exported(filename)
 
     @QtCore.Slot(str)
     def update_timezones(self, country):

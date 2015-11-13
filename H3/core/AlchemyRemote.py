@@ -448,16 +448,6 @@ class H3AlchemyRemoteDB:
             return False
 
 
-def user_count(session, base_code):
-    try:
-        return session.query(Acd.JobContract) \
-            .filter(Acd.JobContract.work_base == base_code) \
-            .count()
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Querying the DB for user count failed"))
-        return False
-
-
 def get_updates(session, first_serial, bases_list, job_contract_list):
     """Extract sync journal entries of interest to our user.
 

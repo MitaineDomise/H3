@@ -237,6 +237,16 @@ def get_highest_non_temp_serial(session, mapped_class, base_code):
                          .format(cls=mapped_class))
 
 
+def user_count(session, base_code):
+    try:
+        return session.query(Acd.JobContract) \
+            .filter(Acd.JobContract.work_base == base_code) \
+            .count()
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Querying the DB for user count failed"))
+        return False
+
+
 def subtree(session, root_base_pkey):
     """
     Queries local database for the organisational tree, then walks it to extract a list of sub-bases
