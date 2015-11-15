@@ -101,10 +101,26 @@ def get_sync_queue(session):
             .filter(Acd.SyncJournal.serial < 0) \
             .order_by(Acd.SyncJournal.serial.desc()) \
             .all()
+
         return entries
     except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception((_("Error while getting the unsubmitted sync entries")))
+        logger.exception(_("Error while getting the unsubmitted sync entries"))
 
+
+def delete_local_queue(session):
+    try:
+        entries = session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.serial < 0) \
+            .all()
+
+        for entry in entries:
+            session.delete(entry)
+            record_class = Acd.get_class_by_table_name(entry.table)
+            record = session.query(record_class).filter(record_class.code == entry.key).one()
+            if record:
+                session.delete(record)
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Error clearing the local queue"))
 
 def get_lowest_queued_sync_entry(session):
     try:

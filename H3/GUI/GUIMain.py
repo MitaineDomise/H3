@@ -96,7 +96,6 @@ class SetupWizard:
         elif H3Core.internal_state["user"] == "remote":
             H3Core.remote_login(username, password)
         H3Core.initial_setup()
-        H3Core.sync_down()
 
     def check_user(self):
         """
@@ -403,7 +402,7 @@ class LoginBox:
         if self.login_attempts < 4:
             username = self.login_box.loginLineEdit.text()
             password = self.login_box.passwordLineEdit.text()
-            H3Core.local_login(username, password)
+            H3Core.login(username, password)
             if H3Core.internal_state["user"] == "ok":
                 self.login_box.accept()
                 self.gui.set_status(_("Successfully logged in as %(name)s") % {"name": username})
@@ -448,6 +447,12 @@ class H3MainGUI:
                              self.rect.width() * 2 / 3,
                              self.rect.height() * 2 / 3)
         self.root_window.setGeometry(rect2)
+
+        syncbutton = QtGui.QPushButton(QtGui.QIcon(":/images/H3.png"), _("Sync"), self.root_window)
+        # noinspection PyUnresolvedReferences
+        syncbutton.clicked.connect(H3Core.sync_up)
+
+        self.root_window.statusbar.addPermanentWidget(syncbutton)
 
         self.root_window.show()
 
@@ -672,11 +677,15 @@ class ManageBases:
             self.menu.userno.setText("-")
         else:
             self.menu.openDate.setText(str(base.opened_date))
-            count = AlchemyCore.get_user_count(base_index.data(33).code)
+            count = AlchemyCore.get_user_count(base.code)
             if count:
                 self.menu.userNo.setText(str(count))
             else:
-                self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
+                count = AlchemyCore.get_user_count(base.code, "remote")
+                if count:
+                    self.menu.userNo.setText(str(count))
+                else:
+                    self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base(self, base=None):
         """

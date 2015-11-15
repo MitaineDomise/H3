@@ -314,31 +314,31 @@ class H3AlchemyRemoteDB:
 
         root_c_a_1 = Acd.AssignedAction(code='ASSIGNEDACTION-1',
                                         serial=1,
-                                        base="ROOT",
+                                        base="BASE-1",
                                         assigned_to='JOBCONTRACT-1',
                                         action='ACTION-1')
 
         root_c_a_2 = Acd.AssignedAction(code='ASSIGNEDACTION-2',
                                         serial=2,
-                                        base="ROOT",
+                                        base="BASE-1",
                                         assigned_to='JOBCONTRACT-1',
                                         action='ACTION-2')
 
         root_c_a_3 = Acd.AssignedAction(code='ASSIGNEDACTION-3',
                                         serial=3,
-                                        base="ROOT",
+                                        base="BASE-1",
                                         assigned_to='JOBCONTRACT-1',
                                         action='ACTION-3')
 
         root_c_a_4 = Acd.AssignedAction(code='ASSIGNEDACTION-4',
                                         serial=4,
-                                        base="ROOT",
+                                        base="BASE-1",
                                         assigned_to='JOBCONTRACT-1',
                                         action='ACTION-4')
 
         root_delegation = Acd.AssignedAction(code='ASSIGNEDACTION-5',
                                              serial=5,
-                                             base="ROOT",
+                                             base="BASE-1",
                                              assigned_to='JOBCONTRACT-1',
                                              action='ACTION-5',
                                              start_date=datetime.date(1900, 1, 1),
@@ -373,7 +373,8 @@ class H3AlchemyRemoteDB:
 
             query4 = sqlalchemy.text('GRANT h3_fps TO "4f626e28d5c60212d8d38ed00f1444f2";')
             query5 = sqlalchemy.text('REVOKE CREATE ON DATABASE h3a FROM "f66ce97dfce5d8604edab9a721f3b85b";')
-            query6 = sqlalchemy.text('GRANT SELECT ON ALL TABLES IN SCHEMA PUBLIC TO GROUP h3_users WITH GRANT OPTION;')
+            query6 = sqlalchemy.text('GRANT SELECT, INSERT, UPDATE ON ALL TABLES IN SCHEMA PUBLIC '
+                                     'TO GROUP h3_users WITH GRANT OPTION;')
             query7 = sqlalchemy.text('GRANT INSERT, UPDATE ON TABLE users, bases TO GROUP h3_fps WITH GRANT OPTION;')
             query8 = sqlalchemy.text('GRANT SELECT ON TABLE users, bases, jobs, job_contracts '
                                      'TO "f66ce97dfce5d8604edab9a721f3b85b";')

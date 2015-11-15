@@ -86,7 +86,7 @@ def attempt_add(session, record):
     :return:
     """
     try:
-        timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        timestamp = session.execute(sqlalchemy.func.current_timestamp()).scalar()
     except sqlalchemy.exc.SQLAlchemyError:
         timestamp = datetime.datetime.utcnow()
 
@@ -96,9 +96,8 @@ def attempt_add(session, record):
                      .format(record=record))
         return "ok", timestamp
     except sqlalchemy.exc.IntegrityError:
-        logger.debug(_("Primary key already exists"))
+        logger.debug(_("Primary key already exists - rebase and retry"))
         return "dupe", timestamp
-    # TODO: Check that it's "only" a pkey duplicate. If it violates UNIQUE then it's another problem
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Failed to insert record {record}")
                          .format(record=record))
@@ -113,7 +112,7 @@ def attempt_merge(session, record):
     :return:
     """
     try:
-        timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        timestamp = session.execute(sqlalchemy.func.current_timestamp()).scalar()
     except sqlalchemy.exc.SQLAlchemyError:
         timestamp = datetime.datetime.utcnow()
     try:
@@ -127,16 +126,6 @@ def attempt_merge(session, record):
         return "err", timestamp
 
 
-def merge_multiple(session, records):
-    try:
-        for record in records:
-            session.merge(record)
-        return True
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Bulk merge failed on this record list : {list}")
-                         .format(list=records))
-
-
 def attempt_delete(session, record):
     """
     deletes a record from the local db
@@ -144,7 +133,7 @@ def attempt_delete(session, record):
     :return:
     """
     try:
-        timestamp = sqlalchemy.select(sqlalchemy.func.current_time())
+        timestamp = session.execute(sqlalchemy.func.current_timestamp()).scalar()
     except sqlalchemy.exc.SQLAlchemyError:
         timestamp = datetime.datetime.utcnow()
 
@@ -157,6 +146,16 @@ def attempt_delete(session, record):
         logger.exception(_("Failed to delete record {record}")
                          .format(record=record))
         return "err", timestamp
+
+
+def merge_multiple(session, records):
+    try:
+        for record in records:
+            session.merge(record)
+        return True
+    except sqlalchemy.exc.SQLAlchemyError:
+        logger.exception(_("Bulk merge failed on this record list : {list}")
+                         .format(list=records))
 
 
 def read_table(session, class_of_table):
@@ -176,7 +175,7 @@ def read_table(session, class_of_table):
         return False
 
 
-def get_highest_synced_sync_entry(session):
+def get_highest_synced_sync_serial(session):
     try:
         max_num = session.query(sqlalchemy.func.max(Acd.SyncJournal.serial).label('max')) \
             .filter(Acd.SyncJournal.serial > 0) \
@@ -222,27 +221,12 @@ def get_highest_serial(session, mapped_class, base_code):
                          .format(cls=mapped_class))
 
 
-def get_highest_non_temp_serial(session, mapped_class, base_code):
-    try:
-        max_num = session.query(sqlalchemy.func.max(mapped_class.serial).label('max')) \
-            .filter(mapped_class.base == base_code, mapped_class.code.notlike("TMP-%")) \
-            .one()
-        logger.debug(_("Highest (final) serial for class {mapped} in local is {no}")
-                     .format(mapped=mapped_class, no=max_num.max))
-        return max_num.max if max_num.max else 0
-    except sqlalchemy.orm.exc.NoResultFound:
-        logger.info(_("No entries for this class, serial defaulted to 0"))
-        return 0
-    except sqlalchemy.exc.SQLAlchemyError:
-        logger.exception(_("Error getting the highest serial for class {cls}")
-                         .format(cls=mapped_class))
-
-
 def user_count(session, base_code):
     try:
-        return session.query(Acd.JobContract) \
+        count = session.query(Acd.JobContract) \
             .filter(Acd.JobContract.work_base == base_code) \
             .count()
+        return count or 0
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Querying the DB for user count failed"))
         return False

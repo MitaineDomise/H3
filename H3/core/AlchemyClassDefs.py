@@ -4,6 +4,7 @@ import datetime
 
 import sqlalchemy.orm
 import sqlalchemy.ext.declarative
+import sqlalchemy.orm.session
 
 from .AlchemyTemporal import Versioned
 
@@ -27,7 +28,7 @@ class WorkBase(Base, Versioned):
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
-    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True, nullable=False)
+    identifier = sqlalchemy.Column(sqlalchemy.String, nullable=False)
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -37,13 +38,14 @@ class WorkBase(Base, Versioned):
     time_zone = sqlalchemy.Column(sqlalchemy.String)
 
     parent_self_fk = sqlalchemy.orm.relationship('WorkBase',
-                                                 backref=sqlalchemy.orm.backref('parent_bases',
-                                                                                remote_side=code,
-                                                                                single_parent=True,
-                                                                                cascade="all, delete-orphan"),
                                                  foreign_keys=parent,
-                                                 passive_updates=False)
+                                                 cascade="all, delete-orphan",
+                                                 passive_updates=False,
+                                                 post_update=True)
 
+    parent_base = sqlalchemy.orm.relationship('WorkBase',
+                                              remote_side=code,
+                                              single_parent=True)
 
 class User(Base, Versioned):
     """
@@ -60,7 +62,7 @@ class User(Base, Versioned):
     base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    login = sqlalchemy.Column(sqlalchemy.String, unique=True)  # i.e ebertolus
+    login = sqlalchemy.Column(sqlalchemy.String)  # i.e ebertolus
     pw_hash = sqlalchemy.Column(sqlalchemy.String)  # hashed app-level password. SQL access will be different.
     first_name = sqlalchemy.Column(sqlalchemy.String)
     last_name = sqlalchemy.Column(sqlalchemy.String)
@@ -121,7 +123,7 @@ class Action(Base):
     base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    identifier = sqlalchemy.Column(sqlalchemy.String, unique=True)  # ie manage_bases
+    identifier = sqlalchemy.Column(sqlalchemy.String)  # ie manage_bases
     category = sqlalchemy.Column(sqlalchemy.String)  # ie FP
     language = sqlalchemy.Column(sqlalchemy.String)  # JSON-encoded dict(locale) of dicts with desc and cat
 
@@ -268,3 +270,14 @@ class Message(Base):
     # Group of items moving (internal) - incoming goods (proper admin format like waybill etc).
 
     #  Global tables will have base = BASE-1. Codes will be of the form USER-1. (important for the rebase mechanism)
+
+
+def get_class_by_table_name(tablename):
+    # noinspection PyProtectedMember
+    for c in Base._decl_class_registry.values():
+        if hasattr(c, '__tablename__') and c.__tablename__ == tablename:
+            return c
+
+
+def detach(acd):
+    sqlalchemy.orm.session.make_transient(acd)
