@@ -1,8 +1,10 @@
 __author__ = 'Man'
 
+import ctypes
 import gettext
 import logging
 import argparse
+import os
 
 import H3.GUI.GUIMain
 
@@ -21,6 +23,9 @@ args = parser.parse_args()
 
 
 if __name__ == '__main__':
+    if os.name == 'nt':
+        myappid = 'Manu.H3.H3supply.0.1'
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
     if args.init_remote:
         H3.GUI.GUIMain.init_remote(args.init_remote, args.password)
     elif args.nuke_remote:

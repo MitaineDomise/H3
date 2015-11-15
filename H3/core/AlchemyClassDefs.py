@@ -267,4 +267,4 @@ class Message(Base):
 
     # Group of items moving (internal) - incoming goods (proper admin format like waybill etc).
 
-    #  Global tables will have base = BASE-1. Codes will be of the form USER-1.
+    #  Global tables will have base = BASE-1. Codes will be of the form USER-1. (important for the rebase mechanism)

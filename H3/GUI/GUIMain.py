@@ -672,11 +672,11 @@ class ManageBases:
             self.menu.userno.setText("-")
         else:
             self.menu.openDate.setText(str(base.opened_date))
-            # count = AlchemyCore.get_user_count(base_index.data(33).code)
-            # if count:
-            #     self.menu.userNo.setText(str(count))
-            # else:
-            #     self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
+            count = AlchemyCore.get_user_count(base_index.data(33).code)
+            if count:
+                self.menu.userNo.setText(str(count))
+            else:
+                self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base(self, base=None):
         """
@@ -804,6 +804,9 @@ class ManageBases:
             row_index = self.base_selection_model.currentIndex()
             base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
             base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+
+        close_base_box.warningLabel.setText(_("Are you sure you want to close base {code} - {name} ?")
+                                            .format(code=base.identifier, name=base.full_name))
 
         if close_base_box.exec_() == QtGui.QDialog.Accepted:
             base.closed_date = close_base_box.dateEdit.date().toPython()

@@ -457,7 +457,6 @@ class H3AlchemyCore:
         """
         self.serials = dict()
 
-
         for table in Acd.Base.metadata.tables:
             if table != "journal_entries" and not table.endswith("_history"):
                 self.serials.update({table: dict()})

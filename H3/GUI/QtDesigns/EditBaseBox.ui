@@ -11,13 +11,13 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Create Base</string>
+   <string>Edit Base</string>
   </property>
   <layout class="QGridLayout" name="gridLayout">
    <item row="0" column="0">
     <widget class="QGroupBox" name="groupBox">
      <property name="title">
-      <string>Create a new base</string>
+      <string>Edit an existing base</string>
      </property>
      <layout class="QFormLayout" name="formLayout_2">
       <property name="fieldGrowthPolicy">

@@ -98,6 +98,7 @@ def attempt_add(session, record):
     except sqlalchemy.exc.IntegrityError:
         logger.debug(_("Primary key already exists"))
         return "dupe", timestamp
+    # TODO: Check that it's "only" a pkey duplicate. If it violates UNIQUE then it's another problem
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Failed to insert record {record}")
                          .format(record=record))
