@@ -27,7 +27,7 @@ class WorkBase(Base, Versioned):
     base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'))
+    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code', onupdate="cascade"))
     identifier = sqlalchemy.Column(sqlalchemy.String, nullable=False)
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
@@ -39,7 +39,6 @@ class WorkBase(Base, Versioned):
 
     parent_self_fk = sqlalchemy.orm.relationship('WorkBase',
                                                  foreign_keys=parent,
-                                                 cascade="all, delete-orphan",
                                                  passive_updates=False,
                                                  post_update=True)
 
@@ -87,22 +86,20 @@ class JobContract(Base):
     base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default="PERMANENT")
 
-    user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.code'))
-    work_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code'), nullable=False)
+    user = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('users.code', onupdate="cascade"))
+    work_base = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code', onupdate="cascade"))
     start_date = sqlalchemy.Column(sqlalchemy.Date)
     end_date = sqlalchemy.Column(sqlalchemy.Date)
-    job_code = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('jobs.code'))
+    job_code = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('jobs.code', onupdate="cascade"))
     job_title = sqlalchemy.Column(sqlalchemy.String)
 
-    base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('job_contracts',
-                                                                                     cascade="all, delete-orphan"),
+    base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('job_contracts'),
                                           foreign_keys=work_base,
                                           passive_updates=False)
-    user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('job_contracts',
-                                                                                 cascade="all, delete-orphan"),
-                                          foreign_keys=user)
-    job_fk = sqlalchemy.orm.relationship('Job', backref=sqlalchemy.orm.backref('job_contracts',
-                                                                               cascade="all, delete-orphan"),
+    user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('job_contracts'),
+                                          foreign_keys=user,
+                                          passive_updates=False)
+    job_fk = sqlalchemy.orm.relationship('Job', backref=sqlalchemy.orm.backref('job_contracts'),
                                          foreign_keys=job_code,
                                          passive_updates=False)
 
@@ -120,7 +117,7 @@ class Action(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     identifier = sqlalchemy.Column(sqlalchemy.String)  # ie manage_bases
@@ -141,7 +138,7 @@ class Job(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     category = sqlalchemy.Column(sqlalchemy.String)  # ie FP
@@ -171,17 +168,17 @@ class AssignedAction(Base):
     delegated_from = sqlalchemy.Column(sqlalchemy.String, default=None)
 
     action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
-    assigned_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
+    assigned_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code', onupdate="cascade"))
     limits = sqlalchemy.Column(sqlalchemy.String)  # JSON limiting sign-off value per-project, base, contract...
 
     job_contract_fk = sqlalchemy.orm.relationship('JobContract',
-                                                  backref=sqlalchemy.orm.backref('assigned_actions',
-                                                                                 cascade="all, delete-orphan"),
+                                                  backref=sqlalchemy.orm.backref('assigned_actions'),
+                                                  passive_updates="False",
                                                   foreign_keys=assigned_to)
 
     action_fk = sqlalchemy.orm.relationship('Action',
-                                            backref=sqlalchemy.orm.backref('assigned_actions',
-                                                                           cascade="all, delete-orphan"),
+                                            backref=sqlalchemy.orm.backref('assigned_actions'),
+                                            passive_updates="False",
                                             foreign_keys=action)
 
 
@@ -242,11 +239,11 @@ class Message(Base):
 
     code = sqlalchemy.Column(sqlalchemy.String, primary_key=True)
     serial = sqlalchemy.Column(sqlalchemy.Integer, nullable=False)
-    base = sqlalchemy.Column(sqlalchemy.String, default="ROOT")
+    base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
-    target_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code'))
+    origin_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code', onupdate="cascade"))
+    target_jc = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code', onupdate="cascade"))
 
     sent = sqlalchemy.Column(sqlalchemy.DateTime)
     received = sqlalchemy.Column(sqlalchemy.DateTime)
@@ -255,12 +252,10 @@ class Message(Base):
     body = sqlalchemy.Column(sqlalchemy.String)
 
     message_origin_fk = sqlalchemy.orm.relationship('JobContract',
-                                                    backref=sqlalchemy.orm.backref('messages_out',
-                                                                                   cascade="all, delete-orphan"),
+                                                    backref=sqlalchemy.orm.backref('messages_out'),
                                                     foreign_keys=origin_jc)
     message_target_fk = sqlalchemy.orm.relationship('JobContract',
-                                                    backref=sqlalchemy.orm.backref('messages_in',
-                                                                                   cascade="all, delete-orphan"),
+                                                    backref=sqlalchemy.orm.backref('messages_in'),
                                                     foreign_keys=target_jc)
 
     # Project - DonorBudgetLine - InternalBudgetLine - Activities - Donors

@@ -164,7 +164,6 @@ class H3AlchemyCore:
 
     def initial_setup(self):
         """
-
         If this is a new base, download the relevant records from base-specific tables.
         If this is a new user, download the user and job and then their current JC.
 
@@ -315,6 +314,7 @@ class H3AlchemyCore:
         # self.get_authorizations('create_base', local_session)
         self.record_incrementer(base, local_session)
         code_builder(base)
+
         sync_entry = self.prepare_sync_entry(base, local_session, "CREATE")
 
         try:
@@ -336,9 +336,11 @@ class H3AlchemyCore:
         :return:
         """
         local_session = SessionLocal()
+        # Check for cycles (can't make base child of its own child)
         for child in AlchemyGeneric.subtree(local_session, base.code):
             if base.parent == child:
                 return "ERR"
+
         sync_entry = self.prepare_sync_entry(base, local_session, "UPDATE")
 
         try:
@@ -359,7 +361,7 @@ class H3AlchemyCore:
         sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
                                      origin=self.current_job_contract.code,
                                      type=entry_type,
-                                     table="bases",
+                                     table=sqlalchemy.inspect(record).class_.__tablename__,
                                      key=record.code,
                                      status="UNSUBMITTED",
                                      local_timestamp=datetime.datetime.utcnow())
@@ -390,16 +392,25 @@ class H3AlchemyCore:
         result = submit_queue_for_upload(local_session, remote_session)
 
         if result == "error":
+            local_session.rollback()
+            remote_session.rollback()
             logger.critical(_("Upward sync failed, inspect queue"))
         elif result == "dupe":
+            local_session.rollback()
+            remote_session.rollback()
             self.sync_down(local_session, remote_session)
-            self.extract_current_serials(remote_session)
             self.rebase_queue(local_session)
+            local_session.commit()
+            remote_session.commit()
+            local_session.close()
+            remote_session.close()
             self.sync_up()
         elif result == "success":
-            AlchemyLocal.delete_local_queue(local_session)
             local_session.commit()
-            self.sync_down(local_session, remote_session)
+            remote_session.commit()
+            # self.sync_down(local_session, remote_session)
+            # local_session.commit()
+            # remote_session.commit()
         remote_session.close()
         local_session.close()
         logger.debug(_("Sync up end"))
@@ -413,20 +424,15 @@ class H3AlchemyCore:
         entries = AlchemyLocal.get_sync_queue(local_session)
 
         serials = self.serials.copy()
-
+        # TODO: If there's a conflict on the way down, hold up the updates and rebase immediately. TMP visually useful
         result = "ok"
         for entry in entries:
             new_entry = None
-            local_session.expunge(entry)
             # Every entry in the queue gets checked - grab the record
             mapped_class = Acd.get_class_by_table_name(entry.table)
             record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
             if not record:
-                if entry.key.startswith("TMP-"):
-                    entry.key = entry.key.lstrip("TMP-")
-                    record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
-                if not record:
-                    logger.error(_("This journal entry points to an invalid key"))
+                logger.error(_("This journal entry points to an invalid key"))
 
             if entry.type == "CREATE":
                 # Increment the current serial for this table / base pair
@@ -493,8 +499,6 @@ class H3AlchemyCore:
 
         logger.debug(_("Sync down end"))
 
-        # self.rebase_queued_updates()
-
     def export_bases(self):
         timestamp = datetime.datetime.now().strftime('%c').replace('/', '-').replace(':', '.')
         local_session = SessionLocal()
@@ -541,25 +545,23 @@ def process_downloaded_updates(entries, records, local_session):
     """
     down_sync_status = "success"
     final_entry = None
-    for entry in entries:
-        final_entry = entry
-        record_to_process = None
-        for record in records:
-            if record.code == entry.key:
-                record_to_process = record
-                break
-        try:
-            if entry.type == "CREATE":
-                local_session.add(record_to_process)
-            elif entry.type == "UPDATE":
-                local_session.merge(record_to_process)
-            elif entry.type == "DELETE":
-                local_session.delete(record_to_process)
-            local_session.commit()
-        except sqlalchemy.exc.SQLAlchemyError:
-            logger.exception(_("Failed to process downloaded update {type} {code}")
-                             .format(type=entry.type, code=record_to_process.code))
-    local_session.add(final_entry)
+
+    if entries and records:
+        for entry, record in zip(entries, records):
+            try:
+                Acd.detach(record)
+                if entry.type == "CREATE":
+                    local_session.add(record)
+                elif entry.type == "UPDATE":
+                    local_session.merge(record)
+                elif entry.type == "DELETE":
+                    local_session.delete(record)
+            except sqlalchemy.exc.SQLAlchemyError:
+                logger.exception(_("Failed to process downloaded update {type} {code}")
+                                 .format(type=entry.type, code=record.code))
+            final_entry = entry
+            Acd.detach(final_entry)
+        local_session.add(final_entry)
     return down_sync_status
 
 
@@ -568,78 +570,77 @@ def submit_queue_for_upload(local_session, remote_session):
     Tries an optimistic upload of unsubmitted updates.
     :return: synchronization result : success, error or conflict (needs to rebase)
     """
-    entries, records = prepare_queue(local_session)
     upward_sync_status = "success"
 
-    if entries and records:
-        for entry, record in zip(entries, records):
-            # The process only tries to upload "unsubmitted" updates.
-            # If it fails, all entries stay in the queue for rebasing.
-            # During rebase the entry's status will be set to "modified" to avoid double-upload
-            timestamp = datetime.datetime.utcnow()
-            journal_serial = AlchemyGeneric.get_highest_synced_sync_serial(remote_session)
-
-            if entry.status == "UNSUBMITTED":
-
-                # Actually try and make the changes to remote
-                result = "err"
-                Acd.detach(record)
-                if entry.type == "CREATE":
-                    result, timestamp = AlchemyGeneric.attempt_add(remote_session, record)
-                elif entry.type == "UPDATE":
-                    result, timestamp = AlchemyGeneric.attempt_merge(remote_session, record)
-                elif entry.type == "DELETE":
-                    result, timestamp = AlchemyGeneric.attempt_delete(remote_session, record)
-                if result == "ok":
-                    entry.status = "ACCEPTED"
-                elif result == "dupe":
-                    upward_sync_status = "dupe"
-                elif result == "err":
-                    upward_sync_status = "error"
-
-            # Manual increment of the global journal serial
-            journal_serial += 1
-            entry.serial = journal_serial
-            entry.processed_timestamp = timestamp
-            try:
-                Acd.detach(entry)
-                remote_session.add(entry)
-            except sqlalchemy.exc.SQLAlchemyError:
-                logger.exception(_("couldn't add journal entry"))
-                upward_sync_status = "error"
-
-    # If everything uploaded correctly, commit remote changes.
-    if upward_sync_status == "success":
-        remote_session.commit()
-    else:
-        logger.error(_("An error occurred while trying to upload current sync queue"))
-        remote_session.rollback()
-        unprepare_queue(local_session)
-        local_session.close()
-    return upward_sync_status
-
-
-def prepare_queue(local_session):
     entries = AlchemyLocal.get_sync_queue(local_session)
+
     records = list()
-    for entry in entries:
-        mapped_class = Acd.get_class_by_table_name(entry.table)
-        record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
-        if entry.key.startswith("TMP-"):
-            record.code = record.code.lstrip("TMP-")  # strip the TMP prefix
-        entry.key = record.code
-        records.append(record)
-    return entries, records
-
-
-def unprepare_queue(local_session):
-    entries = AlchemyLocal.get_sync_queue(local_session)
+    # load all records that need to be processed. Keep them attached to maintain integrity.
+    # Remove "TMP-" on everything (in memory only - that will be rolled back if anything goes wrong)
     if entries:
         for entry in entries:
             mapped_class = Acd.get_class_by_table_name(entry.table)
             record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
-            record.code = "TMP-{code}".format(code=record.code)
-            entry.key = record.code
+            if entry.key.startswith("TMP-") and record.code.startswith("TMP-"):
+                record.code = record.code.lstrip("TMP-")
+                entry.key = entry.key.lstrip("TMP-")
+                local_session.flush()
+            records.append(record)
+
+    if records:
+        # Detach records so their dependants don't get processed at the same time when pasted to the remote session
+        # This is a consequence of the default cascade behaviour
+        for record in records:
+            Acd.detach(record)
+
+        to_be_deleted = list()
+
+        for entry, record in zip(entries, records):
+            try:
+                timestamp = None
+                journal_serial = AlchemyGeneric.get_highest_synced_sync_serial(remote_session)
+
+                if entry.status == "UNSUBMITTED":
+                    # Get a timestamp from the server and actually try and make the changes to remote
+                    if entry.type == "CREATE":
+                        # This needs an extra step to avoid collisions : deleting the local version
+                        timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
+                        remote_session.add(record)
+                        to_be_deleted.append(entry)
+                    elif entry.type == "UPDATE":
+                        timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
+                        remote_session.merge(record)
+                    elif entry.type == "DELETE":
+                        timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
+                        remote_session.delete(record)
+
+                # Manual increment of the global journal serial
+                journal_serial += 1
+                entry.serial = journal_serial
+                entry.processed_timestamp = timestamp
+                entry.status = "ACCEPTED"
+                local_session.delete(entry)
+                local_session.flush()
+                Acd.detach(entry)
+                remote_session.add(entry)
+            except sqlalchemy.exc.IntegrityError:
+                logger.exception(_("Encountered a conflict; rebase and try again"))
+                upward_sync_status = "dupe"
+            except sqlalchemy.exc.SQLAlchemyError:
+                logger.exception(_("couldn't process queued update"))
+                upward_sync_status = "error"
+
+        to_be_deleted.reverse()
+        for entry in to_be_deleted:
+            # Processed backwards to avoid foreign key errors
+            mapped_class = Acd.get_class_by_table_name(entry.table)
+            try:
+                local_session.query(mapped_class).filter(mapped_class.code == entry.key).delete()
+            except sqlalchemy.exc.SQLAlchemyError:
+                logger.exception(_("Couldn't delete the local temp version of record"))
+
+    return upward_sync_status
+
 
 def json_read(data, lang, field):
     return json.loads(data)[lang][field]
@@ -792,7 +793,7 @@ def build_user_pack(session, user_code):
 
 def build_base_pack(session, base_pkey):
     records = list()
-
+    # TODO : get a subtree of my bases ? Same for base_updates ? (configurable)
     work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base_pkey)
     records.append(work_base)
 

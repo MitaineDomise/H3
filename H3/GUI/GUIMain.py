@@ -654,6 +654,8 @@ class ManageBases:
                             base_desc.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
                             base_desc.setText(_("{name} - closed on {date}")
                                               .format(name=base.full_name, date=base.closed_date))
+                        if base.code.startswith("TMP-"):
+                            base_item.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
                         parent.setChild(parent_child_no, 0, base_item)
                         parent.setChild(parent_child_no, 1, base_desc)
                         next_row.append(base_item)

@@ -47,7 +47,7 @@ class H3AlchemyRemoteDB:
                                                                              password=password,
                                                                              host=self.location,
                                                                              port=5432,
-                                                                             database='h3a'))
+                                                                             database='h3a'), echo=False)
             self.engine.connect()
             return True
         except (sqlalchemy.exc.SQLAlchemyError, UnicodeError):
@@ -202,10 +202,12 @@ class H3AlchemyRemoteDB:
     def init_db(self, password):
         query1 = sqlalchemy.text("CREATE DATABASE h3a WITH TEMPLATE template0 LC_CTYPE 'C' LC_COLLATE 'C';")
         query2 = sqlalchemy.text('ALTER DATABASE h3a SET lc_messages = "C";')
+        query3 = sqlalchemy.text('ALTER DATABASE h3a SET timezone = "UTC";')
         cnx = self.engine.connect()
         cnx.execution_options(isolation_level="AUTOCOMMIT")
         cnx.execute(query1)
         cnx.execute(query2)
+        cnx.execute(query3)
         logger.debug(_("Created DB with name h3a"))
         cnx.close()
         self.engine = sqlalchemy.create_engine(sqlalchemy.engine.url.URL(drivername='postgresql+pg8000',
@@ -459,9 +461,9 @@ def get_updates(session, first_serial, bases_list, job_contract_list):
     :return: a list of sync entries and a list of various records
     :rtype : list, list
     """
+    entries = list()
+    records = list()
     try:
-        entries = list()
-        records = list()
 
         for base in bases_list:
             base_entries, base_records = base_updates(session, first_serial, base)
@@ -484,9 +486,10 @@ def base_updates(session, first_serial, base):
     records = list()
 
     updates = session.query(Acd.SyncJournal, Acd.WorkBase) \
-        .filter(Acd.SyncJournal.table == 'bases', Acd.SyncJournal.serial > first_serial) \
+        .filter(Acd.WorkBase.base == base.code,
+                Acd.SyncJournal.table == 'bases',
+                Acd.SyncJournal.serial > first_serial) \
         .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
-        .filter(Acd.WorkBase.code == base.code) \
         .all()
 
     for entry, record in updates:
