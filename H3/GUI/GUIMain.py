@@ -58,7 +58,7 @@ class SetupWizard:
             self.check_remote()
 
         if H3Core.current_job_contract:
-            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
+            user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
             self.wizard.usernameLineEdit.setText(user.login)
 
         self.wizard.browseButton.clicked.connect(self.browse)
@@ -104,6 +104,7 @@ class SetupWizard:
         :return:
         """
         username = self.wizard.usernameLineEdit.text()
+        # TODO : Pinkify Updates
         # TODO : Have global and base "profiles" for sets of actions
         # TODO : Make the mail routing table for actions
         # TODO : Filter closed bases, banned users, finished JCs at download - Think harder about base closing: final ?
@@ -326,7 +327,7 @@ class RecapWizardPage(QtGui.QWizardPage):
         self.wizard().localRecap.setText(self.wizard().localAddress.text())
         self.wizard().remoteRecap.setText(self.wizard().remoteAddress.text())
 
-        user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
+        user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user, "remote")
         self.wizard().nameRecap.setText(_("{first} {last}")
                                         .format(first=user.first_name, last=user.last_name))
 
@@ -337,7 +338,7 @@ class RecapWizardPage(QtGui.QWizardPage):
                                                     " because it's not currently active"))
         else:
             self.wizard().jobRecap.setText(H3Core.current_job_contract.job_title)
-            base = AlchemyCore.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base, "remote")
+            base = H3Core.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base, "remote")
             self.wizard().baseRecap.setText(_("{id} - {fullname}")
                                             .format(id=base.identifier, fullname=base.full_name))
 
@@ -385,7 +386,7 @@ class LoginBox:
         self.login_attempts = 0
 
         if H3Core.current_job_contract:
-            user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
+            user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
             self.login_box.loginLineEdit.setText(user.login)
 
         self.login_box.pushButton.clicked.connect(self.login_clicked)
@@ -463,8 +464,8 @@ class H3MainGUI:
 
         self.current_screen = None
 
-        base = AlchemyCore.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base)
-        user = AlchemyCore.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
+        base = H3Core.get_from_primary_key(Acd.WorkBase, H3Core.current_job_contract.work_base)
+        user = H3Core.get_from_primary_key(Acd.User, H3Core.current_job_contract.user)
 
         self.root_window.setWindowTitle(_("{first} {last}, {job}, {base}")
                                         .format(first=user.first_name,
@@ -496,7 +497,7 @@ class H3MainGUI:
         action_items = list()
 
         for assigned_action in H3Core.assigned_actions:
-            action = AlchemyCore.get_from_primary_key(Acd.Action, assigned_action.action)
+            action = H3Core.get_from_primary_key(Acd.Action, assigned_action.action)
             categories.add(AlchemyCore.json_read(action.language, H3Core.language, 'cat'))
             item = QtGui.QStandardItem(AlchemyCore.json_read(action.language, H3Core.language, 'desc'))
             item.setData(assigned_action, 33)
@@ -574,19 +575,20 @@ class ManageBases:
         self.gui = parent_h3_gui
         self.menu = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Bases.ui"), self.gui.root_window)
         self.gui.root_window.setCentralWidget(self.menu)
+        self.selected_base = None
 
         self.countries_model = QtGui.QStandardItemModel()
         for c in countries:
-            item = QtGui.QStandardItem(_("{code} - {fullname}")
-                                       .format(code=c.alpha2, fullname=c.name))
+            item = QtGui.QStandardItem(_("{code} - {fullname}").format(code=c.alpha2, fullname=c.name))
             item.setData(c, 33)
             self.countries_model.appendRow(item)
-
-        self.parents_model = QtGui.QStandardItemModel()
 
         self.timezones_model = QtGui.QStandardItemModel()
         for tz in pytz.common_timezones:
             self.timezones_model.appendRow(QtGui.QStandardItem(tz))
+
+        # Updated when refreshing tree - we don't have the workbase data at this point
+        self.parents_model = QtGui.QStandardItemModel()
 
         self.bases_tree_model = QtGui.QStandardItemModel()
         self.menu.treeView.setModel(self.bases_tree_model)
@@ -600,7 +602,8 @@ class ManageBases:
         self.menu.deleteButton.clicked.connect(self.close_base)
         self.menu.exportButton.clicked.connect(self.export_bases)
 
-        self.menu.treeView.activated.connect(self.launch_edit)
+        # Double-click / enter launches edit of the base
+        self.menu.treeView.activated.connect(self.edit_base)
 
         if action == "create":
             self.create_base(base)
@@ -609,28 +612,25 @@ class ManageBases:
         if action == "delete":
             self.close_base(base)
 
-    @QtCore.Slot(int)
-    def launch_edit(self, index):
-        self.edit_base(self.bases_tree_model.itemFromIndex(index).data(33))
-
     def refresh_tree(self, base_code):
         self.bases_tree_model.clear()
         hidden_root = self.bases_tree_model.invisibleRootItem()
 
-        base_data = AlchemyCore.read_table(Acd.WorkBase)
+        base_data = H3Core.read_table(Acd.WorkBase)
 
         tree_row = list()
         next_row = list()
 
         for p in base_data:
-            item = QtGui.QStandardItem(_("{code} - {fullname}")
-                                       .format(code=p.identifier, fullname=p.full_name))
+            item = QtGui.QStandardItem(_("{code} - {fullname}").format(code=p.identifier, fullname=p.full_name))
             item.setData(p, 33)
             self.parents_model.appendRow(item)
 
         for record in base_data:
             if record.code == base_code:
+                # Root of the tree is based on user's home base
                 root_record = record
+                # Real root which is parent of itself is removed from the list
                 if record.parent == record.code:
                     _record = base_data.pop(base_data.index(record))
                 root_item = QtGui.QStandardItem(root_record.identifier)
@@ -654,8 +654,6 @@ class ManageBases:
                             base_desc.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
                             base_desc.setText(_("{name} - closed on {date}")
                                               .format(name=base.full_name, date=base.closed_date))
-                        if base.code.startswith("TMP-"):
-                            base_item.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
                         parent.setChild(parent_child_no, 0, base_item)
                         parent.setChild(parent_child_no, 1, base_desc)
                         next_row.append(base_item)
@@ -673,21 +671,18 @@ class ManageBases:
     def update_stats(self, _index):
         row_index = self.base_selection_model.currentIndex()
         base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
-        base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
-        if not base:
-            self.menu.opendate.setText("-")
-            self.menu.userno.setText("-")
+        self.selected_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+        self.menu.statsGroupBox.setTitle(_("{base} stats").format(base=self.selected_base.identifier))
+        self.menu.openDate.setText(str(self.selected_base.opened_date))
+        count = H3Core.get_user_count(self.selected_base.code)
+        if count:
+            self.menu.userNo.setText(str(count))
         else:
-            self.menu.openDate.setText(str(base.opened_date))
-            count = AlchemyCore.get_user_count(base.code)
+            count = H3Core.get_user_count(self.selected_base.code, "remote")
             if count:
                 self.menu.userNo.setText(str(count))
             else:
-                count = AlchemyCore.get_user_count(base.code, "remote")
-                if count:
-                    self.menu.userNo.setText(str(count))
-                else:
-                    self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
+                self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
 
     def create_base(self, base=None):
         """
@@ -707,7 +702,7 @@ class ManageBases:
 
         if base:
             create_base_box.baseCodeLineEdit.setText(base.identifier)
-            parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
+            parent_base = H3Core.get_from_primary_key(Acd.WorkBase, base.parent)
             if parent_base:
                 create_base_box.parentComboBox.setCurrentIndex(
                     create_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
@@ -720,15 +715,12 @@ class ManageBases:
                 create_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly)
             )
         else:
-            row_index = self.base_selection_model.currentIndex()
-            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
-            parent_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
             create_base_box.parentComboBox.setCurrentIndex(
-                create_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
+                create_base_box.parentComboBox.findText(self.selected_base.identifier, QtCore.Qt.MatchStartsWith))
             create_base_box.openingDateDateEdit.setDate(datetime.date.today())
             create_base_box.countryComboBox.setCurrentIndex(
-                create_base_box.countryComboBox.findText(parent_base.country, QtCore.Qt.MatchStartsWith))
-            self.update_timezones(parent_base.country)
+                create_base_box.countryComboBox.findText(self.selected_base.country, QtCore.Qt.MatchStartsWith))
+            self.update_timezones(self.selected_base.country)
 
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
             # noinspection PyArgumentList
@@ -769,12 +761,10 @@ class ManageBases:
         edit_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
 
         if not base:
-            row_index = self.base_selection_model.currentIndex()
-            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
-            base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+            base = self.selected_base
 
         edit_base_box.baseCodeLineEdit.setText(base.identifier)
-        parent_base = AlchemyCore.get_from_primary_key(Acd.WorkBase, base.parent)
+        parent_base = H3Core.get_from_primary_key(Acd.WorkBase, base.parent)
         if parent_base:
             edit_base_box.parentComboBox.setCurrentIndex(
                 edit_base_box.parentComboBox.findText(parent_base.identifier, QtCore.Qt.MatchStartsWith))
@@ -812,9 +802,7 @@ class ManageBases:
         close_base_box.dateEdit.setDate(datetime.date.today())
 
         if not base:
-            row_index = self.base_selection_model.currentIndex()
-            base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
-            base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
+            base = self.selected_base
 
         close_base_box.warningLabel.setText(_("Are you sure you want to close base {code} - {name} ?")
                                             .format(code=base.identifier, name=base.full_name))

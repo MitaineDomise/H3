@@ -14,11 +14,7 @@ from . import AlchemyClassDefs as Acd
 from .AlchemyTemporal import versioned_session
 from ..xllent import xlexport
 
-SessionRemote = sqlalchemy.orm.sessionmaker()
-SessionLocal = sqlalchemy.orm.sessionmaker()
-
 logger = logging.getLogger(__name__)
-
 
 class H3AlchemyCore:
     """
@@ -28,6 +24,10 @@ class H3AlchemyCore:
         """
         Creates the values and objects used throughout a user session.
         """
+
+        self.SessionRemote = sqlalchemy.orm.sessionmaker()
+        self.SessionLocal = sqlalchemy.orm.sessionmaker()
+        
         self.local_db = AlchemyLocal.H3AlchemyLocalDB(None)
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(None)
 
@@ -41,9 +41,6 @@ class H3AlchemyCore:
 
         self.assigned_actions = list()
 
-        self.serials = dict()
-        self.queue_cursor = 0
-
         self.language = "en_UK"
 
         self.options = configparser.ConfigParser()
@@ -55,8 +52,6 @@ class H3AlchemyCore:
         self.local_job_contracts = list()
 
         self.assigned_actions = list()
-        self.serials = dict()
-        self.queue_cursor = 0
 
     # Wizard-related functions
 
@@ -78,10 +73,10 @@ class H3AlchemyCore:
                 self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(temp_remote_db_location)
                 if ping_local(temp_local_db_location) == "H3DB":
                     self.local_db = AlchemyLocal.H3AlchemyLocalDB(temp_local_db_location)
-                    SessionLocal.configure(bind=self.local_db.engine)
+                    self.SessionLocal.configure(bind=self.local_db.engine)
                     if self.options.has_option('H3 Options', 'current user'):
                         username = self.options.get('H3 Options', 'current user')
-                        local_session = SessionLocal()
+                        local_session = self.SessionLocal()
                         user = AlchemyGeneric.get_user_from_login(local_session, username)
                         self.current_job_contract = AlchemyGeneric.get_current_job_contract(local_session, user)
                         self.local_bases = AlchemyLocal.get_local_bases(local_session)
@@ -96,12 +91,12 @@ class H3AlchemyCore:
         Called from the setup wizard.
         """
         self.local_db = AlchemyLocal.H3AlchemyLocalDB(local)
-        SessionLocal.configure(bind=self.local_db.engine)
+        self.SessionLocal.configure(bind=self.local_db.engine)
         self.local_db.create_all_tables()
 
         self.remote_db = AlchemyRemote.H3AlchemyRemoteDB(remote)
         self.remote_db.login('reader', 'weak')
-        SessionRemote.configure(bind=self.remote_db.engine)
+        self.SessionRemote.configure(bind=self.remote_db.engine)
 
         if not self.options.has_section('DB Locations'):
             self.options.add_section('DB Locations')
@@ -120,7 +115,7 @@ class H3AlchemyCore:
          - invalid, found nowhere
         :param username: the username to set up.
         """
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         user = AlchemyGeneric.get_user_from_login(local_session, username)
         local_bases_list = AlchemyLocal.get_local_bases(local_session)
         local_session.close()
@@ -130,7 +125,7 @@ class H3AlchemyCore:
             logger.info(_("User {name} found in local")
                         .format(name=user.login))
         else:
-            remote_session = SessionRemote()
+            remote_session = self.SessionRemote()
             user = AlchemyGeneric.get_user_from_login(remote_session, username)
             self.current_job_contract = AlchemyGeneric.get_current_job_contract(remote_session, user)
             remote_session.close()
@@ -169,8 +164,8 @@ class H3AlchemyCore:
 
         :return:
         """
-        remote_session = SessionRemote()
-        local_session = SessionLocal()
+        remote_session = self.SessionRemote()
+        local_session = self.SessionLocal()
 
         records = list()
 
@@ -178,7 +173,7 @@ class H3AlchemyCore:
             pass
         else:
             if self.internal_state["base"] == "new":
-                # Just adding the top base. Others can be added in through admin tools.
+                # TODO: adding all sub-bases, no archives. Use admin tools to download updates for those.
                 records.extend(build_base_pack(remote_session, self.current_job_contract.work_base))
 
             if self.internal_state["user"] == "remote":
@@ -215,12 +210,10 @@ class H3AlchemyCore:
         """
         Logs in at app-level, in the local DB.
         """
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         logged_user = AlchemyLocal.login(local_session, username, password)
         if logged_user:
             self.update_user_status(logged_user)
-            self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(local_session)
-            self.extract_current_serials(local_session)
         else:
             self.internal_state["user"] = "nok"
         local_session.close()
@@ -234,12 +227,12 @@ class H3AlchemyCore:
         :return:
         """
         self.remote_db.login(username, password)
-        SessionRemote.configure(bind=self.remote_db.engine)
+        self.SessionRemote.configure(bind=self.remote_db.engine)
 
     def remote_pw_change(self, username, old_pass, new_pass):
         self.remote_db.login(username, old_pass)
-        SessionRemote.configure(bind=self.remote_db.engine)
-        remote_session = SessionRemote()
+        self.SessionRemote.configure(bind=self.remote_db.engine)
+        remote_session = self.SessionRemote()
         result = self.remote_db.update_pass(remote_session, username, old_pass, new_pass)
         if result:
             remote_session.commit()
@@ -248,7 +241,7 @@ class H3AlchemyCore:
         remote_session.close()
         if result:
             if self.remote_db.login(username, new_pass):
-                SessionRemote.configure(bind=self.remote_db.engine)
+                self.SessionRemote.configure(bind=self.remote_db.engine)
                 logger.debug(_("New password is now in effect for user {user}")
                              .format(user=username))
                 return True
@@ -275,7 +268,7 @@ class H3AlchemyCore:
             self.options.add_section('H3 Options')
         self.options.set('H3 Options', 'current user', user.login)
 
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         self.current_job_contract = AlchemyGeneric.get_current_job_contract(local_session, user)
 
         if self.current_job_contract:
@@ -298,7 +291,7 @@ class H3AlchemyCore:
         self.options.write(open('config.txt', 'w'))
 
     def update_assigned_actions(self):
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         action_pairs = AlchemyGeneric.get_assigned_actions(local_session, self.current_job_contract)
         local_session.close()
         for assigned_action, _throwaway in action_pairs:
@@ -310,9 +303,9 @@ class H3AlchemyCore:
         :param base:
         :return:
         """
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         # self.get_authorizations('create_base', local_session)
-        self.record_incrementer(base, local_session)
+        record_incrementer(base, local_session)
         code_builder(base)
 
         sync_entry = self.prepare_sync_entry(base, local_session, "CREATE")
@@ -335,7 +328,7 @@ class H3AlchemyCore:
         :param base:
         :return:
         """
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         # Check for cycles (can't make base child of its own child)
         for child in AlchemyGeneric.subtree(local_session, base.code):
             if base.parent == child:
@@ -356,9 +349,7 @@ class H3AlchemyCore:
             local_session.close()
 
     def prepare_sync_entry(self, record, session, entry_type):
-        self.queue_cursor = AlchemyLocal.get_lowest_queued_sync_entry(session)
-        self.queue_cursor -= 1
-        sync_entry = Acd.SyncJournal(serial=self.queue_cursor,
+        sync_entry = Acd.SyncJournal(serial=AlchemyLocal.get_lowest_queued_sync_entry(session) - 1,
                                      origin=self.current_job_contract.code,
                                      type=entry_type,
                                      table=sqlalchemy.inspect(record).class_.__tablename__,
@@ -366,17 +357,6 @@ class H3AlchemyCore:
                                      status="UNSUBMITTED",
                                      local_timestamp=datetime.datetime.utcnow())
         return sync_entry
-
-    def record_incrementer(self, record, session):
-        """
-        generates a new serial, for a brand new record.
-        :param record:
-        :return:
-        """
-        mapper = sqlalchemy.inspect(record).mapper
-        table = mapper.local_table.name
-        self.serials[table][record.base] = AlchemyGeneric.get_highest_serial(session, mapper.class_, record.base) + 1
-        record.serial = self.serials[table][record.base]
 
     def sync_up(self):
         """
@@ -386,10 +366,10 @@ class H3AlchemyCore:
         """
         logger.debug(_("Sync up start"))
 
-        local_session = SessionLocal()
-        remote_session = SessionRemote()
+        local_session = self.SessionLocal()
+        remote_session = self.SessionRemote()
         versioned_session(remote_session)
-        result = submit_queue_for_upload(local_session, remote_session)
+        result = attempt_upload(local_session, remote_session)
 
         if result == "error":
             local_session.rollback()
@@ -398,114 +378,112 @@ class H3AlchemyCore:
         elif result == "dupe":
             local_session.rollback()
             remote_session.rollback()
-            self.sync_down(local_session, remote_session)
-            self.rebase_queue(local_session)
-            local_session.commit()
-            remote_session.commit()
-            local_session.close()
-            remote_session.close()
-            self.sync_up()
+            if self.rebase_sync_down(local_session, remote_session, conflict=True) == "success":
+                local_session.close()
+                remote_session.close()
+                self.sync_up()
+            else:
+                logger.critical(_("Upload and rebase both fail, inspect queue"))
         elif result == "success":
             local_session.commit()
             remote_session.commit()
-            # self.sync_down(local_session, remote_session)
-            # local_session.commit()
-            # remote_session.commit()
-        remote_session.close()
+            if self.rebase_sync_down(local_session, remote_session) == "success":
+                local_session.commit()
+                remote_session.commit()
+            else:
+                logger.error(_("Sync up succeeded but error downloading updates"))
         local_session.close()
-        logger.debug(_("Sync up end"))
+        remote_session.close()
+        logger.debug(_("Sync end"))
 
-    def rebase_queue(self, local_session):
-        """After a failed upward sync, updates the upload queue with valid serials and codes
-        Will update temp numbers to follow the canonical ones downloaded from the central DB
-        Updates failed sync entries with a pointer to the new TMP entry and queues a new one
-        :return:
+    def rebase_sync_down(self, local_session, remote_session, conflict=False):
         """
-        entries = AlchemyLocal.get_sync_queue(local_session)
-
-        serials = self.serials.copy()
-        # TODO: If there's a conflict on the way down, hold up the updates and rebase immediately. TMP visually useful
-        result = "ok"
-        for entry in entries:
-            new_entry = None
-            # Every entry in the queue gets checked - grab the record
-            mapped_class = Acd.get_class_by_table_name(entry.table)
-            record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
-            if not record:
-                logger.error(_("This journal entry points to an invalid key"))
-
-            if entry.type == "CREATE":
-                # Increment the current serial for this table / base pair
-                serials[entry.table][record.base] += 1
-                new_serial = serials[entry.table][record.base]
-                # Check that the serial of the candidate for upload follows the sequence.
-                # If not, set the entry as modified and update the record with a valid serial and code
-                # This will push up all subsequent records, keeping chronology.
-                if new_serial != record.serial:
-                    entry.status = "MODIFIED"
-                    record.serial = new_serial
-                    code_builder(record)
-                # post a new "unsubmitted" entry with the corrected serial and code.
-                # the old entry's status gets updated, pointing to the new TMP-key for that record.
-                if entry.status == "MODIFIED":  # Modified this pass only (no suffix)
-                    new_entry = self.prepare_sync_entry(record, local_session, "CREATE")
-
-                    entry.status = "MODIFIED-" + record.code
-            try:
-                local_session.merge(record)
-                local_session.merge(entry)
-                if new_entry:
-                    local_session.add(new_entry)
-            except sqlalchemy.exc.SQLAlchemyError:
-                result = "err"
-        if result == "ok":
-            local_session.commit()
-        else:
-            logger.exception(_("rebase of upload queue has failed"))
-            local_session.rollback()
-
-    def extract_current_serials(self, session):
-        """
-        At login, populates the dict of dicts keeping track of the current highest serial for all transactions
-        :return:
-        """
-        self.serials = dict()
-
-        for table in Acd.Base.metadata.tables:
-            if table != "journal_entries" and not table.endswith("_history"):
-                self.serials.update({table: dict()})
-                mapped_class = Acd.get_class_by_table_name(table)
-                for base in self.local_bases:
-                    highest = AlchemyGeneric.get_highest_serial(session, mapped_class, base.code)
-                    self.serials[table].update({base.code: highest})
-
-    def sync_down(self, local_session, remote_session):
-        """
-        Grab the latest data from remote as available / at set intervals.
         :return:
         """
         logger.debug(_("Sync down start"))
-        current_cursor = AlchemyGeneric.get_highest_synced_sync_serial(local_session)
+        remote_entries, remote_records = AlchemyRemote \
+            .get_updates(remote_session,
+                         AlchemyGeneric.get_highest_synced_sync_serial(local_session),
+                         self.local_bases,
+                         self.local_job_contracts)
 
-        entries, records = AlchemyRemote.get_updates(remote_session,
-                                                     current_cursor,
-                                                     self.local_bases,
-                                                     self.local_job_contracts)
+        if remote_entries and remote_records:
+            pass
+        else:
+            return "no_new_updates"
 
-        if entries and records:
-            process_downloaded_updates(entries, records, local_session)
+        result = "success"
+        if conflict:
+            logger.debug(_("Starting rebase"))
+            # Build a dict (of dicts) of the maximum serial created in the pending downloaded updates
+            # it's of the form {table1: {base1: x, base2: y...}, ...}
+            top_serials = dict()
+            for r_entry, r_record in zip(remote_entries, remote_records):
+                if r_entry.type == "CREATE":
+                    if r_entry.table not in top_serials.keys():
+                        top_serials.update({r_entry.table: dict()})
+                    if r_record.base not in top_serials[r_entry.table].keys():
+                        top_serials[r_entry.table].update({r_record.base: 0})
+                    elif r_record.serial > top_serials[r_entry.table][r_record.base]:
+                        top_serials[r_entry.table][r_record.base] = r_record.serial
 
-        self.extract_current_serials(local_session)
+            # shift CREATE queue entries forward, to make space for the pending downloaded ones
+            # note : they're all unsubmitted
+            queue = AlchemyLocal.get_sync_queue(local_session)
+            for queue_entry in queue:
+                # if this journal entry is part of the tables affected by remote creation, grab the record and update
+                if queue_entry.table in top_serials.keys():
+                    mapped_class = Acd.get_class_by_table_name(queue_entry.table)
+                    record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, queue_entry.key)
+                    top_serials[queue_entry.table][record.base] += 1
+                    record.serial = top_serials[queue_entry.table]
+                    code_builder(record)
+                    queue_entry.key = record.code
+            try:
+                local_session.flush()
+            except sqlalchemy.exc.SQLAlchemyError:
+                logger.exception(_("Error rebasing updates"))
+                result = "rebase_error"
+        if result == "success":
+            result = process_downloaded_updates(remote_entries, remote_records, local_session)
 
-        logger.debug(_("Sync down end"))
+        return result
 
     def export_bases(self):
         timestamp = datetime.datetime.now().strftime('%c').replace('/', '-').replace(':', '.')
-        local_session = SessionLocal()
+        local_session = self.SessionLocal()
         bases = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
         local_session.close()
         filename = xlexport.bases_writer(bases, timestamp)
         return filename
+
+    def get_queue(self):
+        local_session = self.SessionLocal()
+        return AlchemyLocal.get_sync_queue(local_session)
+
+    def read_table(self, class_of_table, location="local"):
+        session = self.SessionLocal()
+        if location == "remote":
+            session = self.SessionRemote()
+        table = AlchemyGeneric.read_table(session, class_of_table)
+        session.close()
+        return table
+
+    def get_user_count(self, base_code, location="local"):
+        session = self.SessionLocal()
+        if location == "remote":
+            session = self.SessionRemote()
+        count = AlchemyGeneric.user_count(session, base_code)
+        session.close()
+        return count
+
+    def get_from_primary_key(self, mapped_class, pkey, location="local"):
+        session = self.SessionLocal()
+        if location == "remote":
+            session = self.SessionRemote()
+        record = AlchemyGeneric.get_from_primary_key(session, mapped_class, pkey)
+        session.close()
+        return record
 
 
 def open_exported(filename):
@@ -529,10 +507,10 @@ def code_builder(record):
     mapper = sqlalchemy.inspect(record).mapper
     base = record.base.join("-") if record.base != 'BASE-1' else ''
     period = record.period.join("-") if record.period != 'PERMANENT' else ''
-    record.code = "TMP-{base}{prefix}-{period}{serial}".format(base=base,
-                                                               prefix=mapper.class_.prefix,
-                                                               period=period,
-                                                               serial=record.serial)
+    record.code = "{base}{prefix}-{period}{serial}".format(base=base,
+                                                           prefix=mapper.class_.prefix,
+                                                           period=period,
+                                                           serial=record.serial)
 
 
 def process_downloaded_updates(entries, records, local_session):
@@ -556,16 +534,22 @@ def process_downloaded_updates(entries, records, local_session):
                     local_session.merge(record)
                 elif entry.type == "DELETE":
                     local_session.delete(record)
+                local_session.flush()
             except sqlalchemy.exc.SQLAlchemyError:
                 logger.exception(_("Failed to process downloaded update {type} {code}")
                                  .format(type=entry.type, code=record.code))
+                down_sync_status = "error"
             final_entry = entry
             Acd.detach(final_entry)
         local_session.add(final_entry)
+        local_session.query(Acd.SyncJournal) \
+            .filter(Acd.SyncJournal.serial > 0, Acd.SyncJournal.serial < final_entry.serial) \
+            .all().delete()
+        local_session.flush()
     return down_sync_status
 
 
-def submit_queue_for_upload(local_session, remote_session):
+def attempt_upload(local_session, remote_session):
     """
     Tries an optimistic upload of unsubmitted updates.
     :return: synchronization result : success, error or conflict (needs to rebase)
@@ -576,15 +560,10 @@ def submit_queue_for_upload(local_session, remote_session):
 
     records = list()
     # load all records that need to be processed. Keep them attached to maintain integrity.
-    # Remove "TMP-" on everything (in memory only - that will be rolled back if anything goes wrong)
     if entries:
         for entry in entries:
             mapped_class = Acd.get_class_by_table_name(entry.table)
             record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, entry.key)
-            if entry.key.startswith("TMP-") and record.code.startswith("TMP-"):
-                record.code = record.code.lstrip("TMP-")
-                entry.key = entry.key.lstrip("TMP-")
-                local_session.flush()
             records.append(record)
 
     if records:
@@ -603,9 +582,10 @@ def submit_queue_for_upload(local_session, remote_session):
                 if entry.status == "UNSUBMITTED":
                     # Get a timestamp from the server and actually try and make the changes to remote
                     if entry.type == "CREATE":
-                        # This needs an extra step to avoid collisions : deleting the local version
+                        # This needs an extra step to avoid collisions : deleting the local version, deferred
                         timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
                         remote_session.add(record)
+                        remote_session.flush()
                         to_be_deleted.append(entry)
                     elif entry.type == "UPDATE":
                         timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
@@ -623,21 +603,23 @@ def submit_queue_for_upload(local_session, remote_session):
                 local_session.flush()
                 Acd.detach(entry)
                 remote_session.add(entry)
-            except sqlalchemy.exc.IntegrityError:
+            except sqlalchemy.exc.ProgrammingError:
+                # pg8000 throws a programming error upon PK conflict :(
                 logger.exception(_("Encountered a conflict; rebase and try again"))
                 upward_sync_status = "dupe"
             except sqlalchemy.exc.SQLAlchemyError:
                 logger.exception(_("couldn't process queued update"))
                 upward_sync_status = "error"
 
-        to_be_deleted.reverse()
-        for entry in to_be_deleted:
-            # Processed backwards to avoid foreign key errors
-            mapped_class = Acd.get_class_by_table_name(entry.table)
-            try:
-                local_session.query(mapped_class).filter(mapped_class.code == entry.key).delete()
-            except sqlalchemy.exc.SQLAlchemyError:
-                logger.exception(_("Couldn't delete the local temp version of record"))
+        if upward_sync_status == "success":
+            to_be_deleted.reverse()
+            for entry in to_be_deleted:
+                # Processed backwards to avoid foreign key errors
+                mapped_class = Acd.get_class_by_table_name(entry.table)
+                try:
+                    local_session.query(mapped_class).filter(mapped_class.code == entry.key).delete()
+                except sqlalchemy.exc.SQLAlchemyError:
+                    logger.exception(_("Couldn't delete the local version of record"))
 
     return upward_sync_status
 
@@ -651,14 +633,17 @@ def ping_local(location):
     :param location:
     :return:
     """
+    # Tests here are a bit overkill but we're usually accessing this DB file over a LAN so permissions
+    # could be set wrongly etc.
     result = ""
     if location == "":
         result = "EMPTY"
     elif os.access(location, os.F_OK):  # if file exists, check it's a H3 DB
         if os.access(location, os.R_OK and os.W_OK):
             temp_local_db = AlchemyLocal.H3AlchemyLocalDB(location)
-            SessionLocal.configure(bind=temp_local_db.engine)
-            local_session = SessionLocal()
+            SessionPing = sqlalchemy.orm.sessionmaker()
+            SessionPing.configure(bind=temp_local_db.engine)
+            local_session = SessionPing()
             if AlchemyLocal.has_a_base(local_session):
                 result = "H3DB"
             else:
@@ -700,8 +685,9 @@ def init_remote(location, password):
     logger.debug(_("Connected with master DB credentials"))
     new_db.init_db(password)
     logger.debug(_("Created and switched to H3 DB"))
-    SessionRemote.configure(bind=new_db.engine)
-    remote_session = SessionRemote()
+    SessionInit = sqlalchemy.orm.sessionmaker()
+    SessionInit.configure(bind=new_db.engine)
+    remote_session = SessionInit()
 
     if new_db.populate(remote_session):
         remote_session.commit()
@@ -721,32 +707,6 @@ def nuke_remote(location, password):
         print(_("DB Wipe successful"))
     else:
         print(_("DB Wipe failed"))
-
-
-def read_table(class_of_table, location="local"):
-    session = SessionLocal()
-    if location == "remote":
-        session = SessionRemote()
-    table = AlchemyGeneric.read_table(session, class_of_table)
-    session.close()
-    return table
-
-
-def get_user_count(base_code, location="local"):
-    session = SessionLocal()
-    if location == "remote":
-        session = SessionRemote()
-    count = AlchemyGeneric.user_count(session, base_code)
-    session.close()
-    return count
-
-def get_from_primary_key(mapped_class, pkey, location="local"):
-    session = SessionLocal()
-    if location == "remote":
-        session = SessionRemote()
-    record = AlchemyGeneric.get_from_primary_key(session, mapped_class, pkey)
-    session.close()
-    return record
 
 
 def build_user_pack(session, user_code):
@@ -793,8 +753,19 @@ def build_user_pack(session, user_code):
 
 def build_base_pack(session, base_pkey):
     records = list()
-    # TODO : get a subtree of my bases ? Same for base_updates ? (configurable)
-    work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base_pkey)
-    records.append(work_base)
+    sub_bases = AlchemyGeneric.subtree(session, base_pkey)
+    for base in sub_bases:
+        work_base = AlchemyGeneric.get_from_primary_key(session, Acd.WorkBase, base)
+        records.append(work_base)
 
     return records
+
+
+def record_incrementer(record, session):
+    """
+    generates a new serial, for a brand new record.
+    :param record:
+    :return:
+    """
+    mapper = sqlalchemy.inspect(record).mapper
+    record.serial = AlchemyGeneric.get_highest_serial(session, mapper.class_, record.base) + 1

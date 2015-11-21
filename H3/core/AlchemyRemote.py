@@ -450,99 +450,85 @@ class H3AlchemyRemoteDB:
             logger.exception(_("Failed to clean up default DB and roles"))
             return False
 
-
 def get_updates(session, first_serial, bases_list, job_contract_list):
     """Extract sync journal entries of interest to our user.
-
     :param session: A session object targeted (bound) to the remote DB
     :param first_serial: the last update we don't need (excluded floor value)
+    :param bases_list: all locally-recorded bases
     :param job_contract_list: Locally-recorded job contracts to get updates for.
-    :param bases_list: the base visibility, for which we request updates.
     :return: a list of sync entries and a list of various records
     :rtype : list, list
     """
     entries = list()
     records = list()
     try:
+        pack = dict()
 
-        for base in bases_list:
-            base_entries, base_records = base_updates(session, first_serial, base)
-            entries.extend(base_entries)
-            records.extend(base_records)
+        # Currently getting all local bases ie The ones grabbed with job
+        # TODO : configurable "live" bases vs. sub-bases without updates
+        # TODO: add in procurement and stocks  records, filtering on Acd.base
+        base_updates = session.query(Acd.SyncJournal, Acd.WorkBase) \
+            .filter(Acd.WorkBase.base.in_(bases_list),
+                    Acd.SyncJournal.table == 'bases',
+                    Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
+            .all()
 
-        for job_contract in job_contract_list:
-            jc_entries, jc_records = individual_updates(session, first_serial, job_contract)
-            entries.extend(jc_entries)
-            records.extend(jc_records)
+        # After this query all records related to the JCs are loaded into the session because of cascading;
+        # But we still need to get all journal entries, too
+        jc_updates = session.query(Acd.SyncJournal, Acd.JobContract) \
+            .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
+            .filter(Acd.JobContract.code.in_(job_contract_list)) \
+            .all()
+
+        job_updates = session.query(Acd.SyncJournal, Acd.Job) \
+            .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
+            .filter(Acd.Job.code.in_(job_contract_list)) \
+            .all()
+
+        user_updates = session.query(Acd.SyncJournal, Acd.User) \
+            .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
+            .filter(Acd.User.code.in_(job_contract_list)) \
+            .all()
+
+        assigned_action_updates = session.query(Acd.SyncJournal, Acd.AssignedAction) \
+            .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
+            .filter(Acd.AssignedAction.assigned_to.in_(job_contract_list)) \
+            .all()
+
+        # Here the query gets more complicated as fishing the targeted actions from the job contract
+        # is 2 levels of indirection. This catches new actions that have been freshly assigned
+        # without ending up with all actions (including admin ones) in the local DB.
+        # For base updates the Acd.base field should grab all procurement and stock data easily
+        # For "normal" queries not jumping between DBs the ORM will take care of that.
+        action_updates = session.query(Acd.SyncJournal, Acd.Action) \
+            .filter(Acd.SyncJournal.table == 'actions', Acd.SyncJournal.serial > first_serial) \
+            .join(Acd.Action, Acd.Action.code == Acd.SyncJournal.key) \
+            .filter(Acd.Action.in_(session.query(Acd.AssignedAction.action)
+                                   .filter(Acd.AssignedAction.assigned_to.in_(job_contract_list))
+                                   .all())) \
+            .all()
+
+        # Now put all these updates into a dict of the form {journal_serial: [entry, record]} and sort them
+        for entry, record in base_updates \
+                + jc_updates \
+                + job_updates \
+                + user_updates \
+                + action_updates \
+                + assigned_action_updates:
+            pack.update({entry.key: [entry, record]})
+
+        sorted_pack = sorted(pack)
+
+        for couple in sorted_pack:
+            entries.append(couple[0])
+            records.append(couple[1])
 
         return entries, records
 
     except sqlalchemy.exc.SQLAlchemyError:
         logger.exception(_("Failed to download updates"))
-
-
-def base_updates(session, first_serial, base):
-    entries = list()
-    records = list()
-
-    updates = session.query(Acd.SyncJournal, Acd.WorkBase) \
-        .filter(Acd.WorkBase.base == base.code,
-                Acd.SyncJournal.table == 'bases',
-                Acd.SyncJournal.serial > first_serial) \
-        .join(Acd.WorkBase, Acd.WorkBase.code == Acd.SyncJournal.key) \
-        .all()
-
-    for entry, record in updates:
-        entries.append(entry)
-        records.append(record)
-
-    return entries, records
-
-
-def individual_updates(session, first_serial, job_contract):
-    entries = list()
-    records = list()
-
-    job_updates = session.query(Acd.SyncJournal, Acd.Job) \
-        .filter(Acd.SyncJournal.table == 'jobs', Acd.SyncJournal.serial > first_serial) \
-        .join(Acd.Job, Acd.Job.code == Acd.SyncJournal.key) \
-        .filter(Acd.Job.code == job_contract.job_code) \
-        .all()
-
-    for entry, record in job_updates:
-        entries.append(entry)
-        records.append(record)
-
-    user_updates = session.query(Acd.SyncJournal, Acd.User) \
-        .filter(Acd.SyncJournal.table == 'users', Acd.SyncJournal.serial > first_serial) \
-        .join(Acd.User, Acd.User.code == Acd.SyncJournal.key) \
-        .filter(Acd.User.code == job_contract.user) \
-        .all()
-
-    for entry, record in user_updates:
-        entries.append(entry)
-        records.append(record)
-
-    jc_updates = session.query(Acd.SyncJournal, Acd.JobContract) \
-        .filter(Acd.SyncJournal.table == 'job_contracts', Acd.SyncJournal.serial > first_serial) \
-        .join(Acd.JobContract, Acd.JobContract.code == Acd.SyncJournal.key) \
-        .filter(Acd.JobContract.code == job_contract.code) \
-        .all()
-
-    for entry, record in jc_updates:
-        entries.append(entry)
-        records.append(record)
-
-    action_updates = session.query(Acd.SyncJournal, Acd.AssignedAction, Acd.Action) \
-        .filter(Acd.SyncJournal.table == 'assigned_actions', Acd.SyncJournal.serial > first_serial) \
-        .join(Acd.AssignedAction, Acd.AssignedAction.code == Acd.SyncJournal.key) \
-        .filter(Acd.AssignedAction.assigned_to == job_contract.code) \
-        .join(Acd.Action, Acd.Action.code == Acd.AssignedAction.action) \
-        .all()
-
-    for entry, assigned_action_record, action_record in action_updates:
-        entries.append(entry)
-        records.append(action_record)
-        records.append(assigned_action_record)
-
-    return entries, records
