@@ -5,7 +5,6 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
-
 from iso3166 import countries
 import pytz
 
@@ -104,7 +103,6 @@ class SetupWizard:
         :return:
         """
         username = self.wizard.usernameLineEdit.text()
-        # TODO : Pinkify Updates
         # TODO : Have global and base "profiles" for sets of actions
         # TODO : Make the mail routing table for actions
         # TODO : Filter closed bases, banned users, finished JCs at download - Think harder about base closing: final ?
@@ -584,8 +582,7 @@ class ManageBases:
             self.countries_model.appendRow(item)
 
         self.timezones_model = QtGui.QStandardItemModel()
-        for tz in pytz.common_timezones:
-            self.timezones_model.appendRow(QtGui.QStandardItem(tz))
+        self.timezones_model.appendRow(QtGui.QStandardItem(_("Choose a country")))
 
         # Updated when refreshing tree - we don't have the workbase data at this point
         self.parents_model = QtGui.QStandardItemModel()
@@ -615,6 +612,16 @@ class ManageBases:
     def refresh_tree(self, base_code):
         self.bases_tree_model.clear()
         hidden_root = self.bases_tree_model.invisibleRootItem()
+
+        queue_data = H3Core.get_queue()
+        fresh = list()
+        temp = list()
+        for queue_item in queue_data:
+            age = datetime.datetime.utcnow() - queue_item.local_timestamp
+            if age.total_seconds() / 60 < 5:
+                fresh.append(queue_item.key)
+            if queue_item.type == "CREATE" and queue_item.status == "UNSUBMITTED":
+                temp.append(queue_item.key)
 
         base_data = H3Core.read_table(Acd.WorkBase)
 
@@ -649,11 +656,7 @@ class ManageBases:
                         base_desc = QtGui.QStandardItem(base.full_name)
                         base_item.setData(base, 33)
                         parent_child_no = parent.rowCount()
-                        if base.closed_date and base.closed_date <= datetime.date.today():
-                            base_item.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
-                            base_desc.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
-                            base_desc.setText(_("{name} - closed on {date}")
-                                              .format(name=base.full_name, date=base.closed_date))
+                        self.paint_line(base_item, base_desc, fresh, temp)
                         parent.setChild(parent_child_no, 0, base_item)
                         parent.setChild(parent_child_no, 1, base_desc)
                         next_row.append(base_item)
@@ -666,6 +669,20 @@ class ManageBases:
         self.menu.treeView.expandAll()
         self.menu.treeView.resizeColumnToContents(0)
         self.menu.treeView.resizeColumnToContents(1)
+
+    def paint_line(self, base_item, base_desc, fresh, temp):
+        base = base_item.data(33)
+        if base.closed_date and base.closed_date <= datetime.date.today():
+            base_item.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
+            base_desc.setForeground(QtGui.QBrush(QtGui.QColor('lightgray')))
+            base_desc.setText(_("{name} - closed on {date}")
+                              .format(name=base.full_name, date=base.closed_date))
+        if base.code in fresh:
+            base_item.setFont(base_item.font().setItalic(True))
+            base_desc.setFont(base_desc.font().setItalic(True))
+        if base.code in temp:
+            base_item.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
+            base_desc.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
 
     @QtCore.Slot(int)
     def update_stats(self, _index):
@@ -683,6 +700,10 @@ class ManageBases:
                 self.menu.userNo.setText(str(count))
             else:
                 self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
+        if self.selected_base.closed_date and self.selected_base.closed_date <= datetime.date.today():
+            self.menu.deleteButton.setEnabled(False)
+        else:
+            self.menu.deleteButton.setEnabled(True)
 
     def create_base(self, base=None):
         """
