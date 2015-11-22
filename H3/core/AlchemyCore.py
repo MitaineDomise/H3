@@ -12,7 +12,7 @@ import sqlalchemy.exc
 from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from . import AlchemyClassDefs as Acd
 from .AlchemyTemporal import versioned_session
-from ..xllent import xlexport
+from ..XLLent import export
 
 logger = logging.getLogger(__name__)
 
@@ -273,12 +273,9 @@ class H3AlchemyCore:
 
         if self.current_job_contract:
             self.local_bases = AlchemyLocal.get_local_bases(local_session)
-            current_jc_base = AlchemyGeneric.get_from_primary_key(local_session,
-                                                                  Acd.WorkBase,
-                                                                  self.current_job_contract.work_base)
-            if current_jc_base not in self.local_bases:
-                logger.error(_("User {name} is currently affected to {base}, which isn't part of the local DB.")
-                             .format(name=user.login, base=current_jc_base.identifier))
+            if self.current_job_contract.base not in self.local_bases:
+                logger.error(_("User {name} is currently affected to a base which isn't part of the local DB.")
+                             .format(name=user.login))
                 self.internal_state["base"] = "relocated"
             else:
                 self.internal_state["user"] = "ok"
@@ -379,6 +376,8 @@ class H3AlchemyCore:
             local_session.rollback()
             remote_session.rollback()
             if self.rebase_sync_down(local_session, remote_session, conflict=True) == "success":
+                local_session.commit()
+                remote_session.commit()
                 local_session.close()
                 remote_session.close()
                 self.sync_up()
@@ -424,26 +423,40 @@ class H3AlchemyCore:
                         top_serials.update({r_entry.table: dict()})
                     if r_record.base not in top_serials[r_entry.table].keys():
                         top_serials[r_entry.table].update({r_record.base: 0})
-                    elif r_record.serial > top_serials[r_entry.table][r_record.base]:
+                    if r_record.serial > top_serials[r_entry.table][r_record.base]:
                         top_serials[r_entry.table][r_record.base] = r_record.serial
 
             # shift CREATE queue entries forward, to make space for the pending downloaded ones
             # note : they're all unsubmitted
             queue = AlchemyLocal.get_sync_queue(local_session)
-            for queue_entry in queue:
-                # if this journal entry is part of the tables affected by remote creation, grab the record and update
-                if queue_entry.table in top_serials.keys():
-                    mapped_class = Acd.get_class_by_table_name(queue_entry.table)
-                    record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, queue_entry.key)
-                    top_serials[queue_entry.table][record.base] += 1
-                    record.serial = top_serials[queue_entry.table]
-                    code_builder(record)
-                    queue_entry.key = record.code
-            try:
-                local_session.flush()
-            except sqlalchemy.exc.SQLAlchemyError:
-                logger.exception(_("Error rebasing updates"))
-                result = "rebase_error"
+            records_to_rebase = list()
+            with local_session.no_autoflush:
+                try:
+                    for queue_entry in queue:
+                        # if this journal entry is part of the tables affected by remote creation
+                        if queue_entry.table in top_serials.keys():
+                            mapped_class = Acd.get_class_by_table_name(queue_entry.table)
+                            record = AlchemyGeneric.get_from_primary_key(local_session, mapped_class, queue_entry.key)
+                            top_serials[queue_entry.table][record.base] += 1
+
+                            # defer the actual rebasing because multiple simultaneous updates have a way of colliding
+                            unit = list()
+                            unit.append(top_serials[queue_entry.table][record.base])
+                            unit.append(queue_entry)
+                            unit.append(record)
+                            records_to_rebase.append(unit)
+
+                    records_to_rebase.reverse()
+                    for record_to_rebase in records_to_rebase:
+                        # 0 = serial to apply, 1 = entry, 2 = record
+                        record_to_rebase[2].serial = record_to_rebase[0]
+                        code_builder(record_to_rebase[2])
+                        record_to_rebase[1].key = record_to_rebase[2].code
+                        local_session.merge(record_to_rebase[2])
+                        local_session.flush()
+                except sqlalchemy.exc.SQLAlchemyError:
+                    logger.exception(_("Error rebasing updates"))
+                    result = "rebase_error"
         if result == "success":
             result = process_downloaded_updates(remote_entries, remote_records, local_session)
 
@@ -454,7 +467,7 @@ class H3AlchemyCore:
         local_session = self.SessionLocal()
         bases = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
         local_session.close()
-        filename = xlexport.bases_writer(bases, timestamp)
+        filename = export.bases_writer(bases, timestamp)
         return filename
 
     def get_queue(self):
@@ -544,7 +557,7 @@ def process_downloaded_updates(entries, records, local_session):
         local_session.add(final_entry)
         local_session.query(Acd.SyncJournal) \
             .filter(Acd.SyncJournal.serial > 0, Acd.SyncJournal.serial < final_entry.serial) \
-            .all().delete()
+            .delete()
         local_session.flush()
     return down_sync_status
 
@@ -574,8 +587,8 @@ def attempt_upload(local_session, remote_session):
 
         to_be_deleted = list()
 
-        for entry, record in zip(entries, records):
-            try:
+        try:
+            for entry, record in zip(entries, records):
                 timestamp = None
                 journal_serial = AlchemyGeneric.get_highest_synced_sync_serial(remote_session)
 
@@ -603,13 +616,13 @@ def attempt_upload(local_session, remote_session):
                 local_session.flush()
                 Acd.detach(entry)
                 remote_session.add(entry)
-            except sqlalchemy.exc.ProgrammingError:
-                # pg8000 throws a programming error upon PK conflict :(
-                logger.exception(_("Encountered a conflict; rebase and try again"))
-                upward_sync_status = "dupe"
-            except sqlalchemy.exc.SQLAlchemyError:
-                logger.exception(_("couldn't process queued update"))
-                upward_sync_status = "error"
+        except sqlalchemy.exc.ProgrammingError:
+            # pg8000 throws a programming error upon PK conflict :(
+            logger.exception(_("Encountered a conflict; rebase and try again"))
+            upward_sync_status = "dupe"
+        except sqlalchemy.exc.SQLAlchemyError:
+            logger.exception(_("couldn't process queued update"))
+            upward_sync_status = "error"
 
         if upward_sync_status == "success":
             to_be_deleted.reverse()

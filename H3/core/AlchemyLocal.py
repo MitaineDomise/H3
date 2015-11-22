@@ -57,7 +57,11 @@ def get_local_users(session):
         users = session.query(Acd.JobContract).all()
         logger.debug(_("List of job contracts in DB : {list}")
                      .format(list=str(users)))
-        return users
+
+        users_list = list()
+        for user in users:
+            users_list.append(user.code)
+        return users_list
     except sqlalchemy.exc.SQLAlchemyError:
         logger.warning(_("Unable to query Local DB for job contracts"))
         return False
@@ -72,7 +76,11 @@ def get_local_bases(session):
         bases = session.query(Acd.WorkBase).all()
         logger.debug(_("List of bases in DB : {list}")
                      .format(list=str(bases)))
-        return bases
+
+        bases_list = list()
+        for base in bases:
+            bases_list.append(base.code)
+        return bases_list
     except sqlalchemy.exc.SQLAlchemyError:
         logger.warning(_("Unable to query Local DB for bases"))
         return False

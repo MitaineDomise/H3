@@ -505,12 +505,14 @@ def get_updates(session, first_serial, bases_list, job_contract_list):
         # without ending up with all actions (including admin ones) in the local DB.
         # For base updates the Acd.base field should grab all procurement and stock data easily
         # For "normal" queries not jumping between DBs the ORM will take care of that.
+        targeted_actions = session.query(Acd.AssignedAction.action) \
+            .filter(Acd.AssignedAction.assigned_to.in_(job_contract_list)) \
+            .subquery()
+
         action_updates = session.query(Acd.SyncJournal, Acd.Action) \
             .filter(Acd.SyncJournal.table == 'actions', Acd.SyncJournal.serial > first_serial) \
             .join(Acd.Action, Acd.Action.code == Acd.SyncJournal.key) \
-            .filter(Acd.Action.in_(session.query(Acd.AssignedAction.action)
-                                   .filter(Acd.AssignedAction.assigned_to.in_(job_contract_list))
-                                   .all())) \
+            .filter(Acd.Action.code == targeted_actions.c.action) \
             .all()
 
         # Now put all these updates into a dict of the form {journal_serial: [entry, record]} and sort them
@@ -520,13 +522,13 @@ def get_updates(session, first_serial, bases_list, job_contract_list):
                 + user_updates \
                 + action_updates \
                 + assigned_action_updates:
-            pack.update({entry.key: [entry, record]})
+            pack.update({entry.serial: [entry, record]})
 
         sorted_pack = sorted(pack)
 
-        for couple in sorted_pack:
-            entries.append(couple[0])
-            records.append(couple[1])
+        for index in sorted_pack:
+            entries.append(pack[index][0])
+            records.append(pack[index][1])
 
         return entries, records
 
