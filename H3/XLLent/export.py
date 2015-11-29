@@ -1,9 +1,19 @@
 __author__ = 'Emmanuel'
 
+import datetime
+import locale
+
 import xlsxwriter
+import babel
+import babel.dates
 
 
-def bases_writer(bases, timestamp):
+def bases_writer(bases):
+    # First get a babel Locale object
+    loc = babel.Locale.parse(locale.getdefaultlocale()[0], "_")
+    # Make the timestamp for the filenameboth locally correct and windows-compatible
+    timestamp = babel.dates.format_datetime(datetime.datetime.now(), locale=loc).replace('/', '-').replace(':', '.')
+
     filename = _("Bases exported {time}.xlsx").format(time=timestamp)
     wb = xlsxwriter.Workbook(filename)
     ws = wb.add_worksheet(_("Bases"))
@@ -11,7 +21,8 @@ def bases_writer(bases, timestamp):
     row_no = 0
     widths = [0, 0, 0, 0, 0, 0, 0, 0]
 
-    dates = wb.add_format({'num_format': 'd mmm yyyy'})
+    # Format the excel dates to the proper "medium" representation
+    dates = wb.add_format({'num_format': loc.date_formats["long"].pattern})
 
     for base in bases:
         ws.write(row_no, 0, base.code)
@@ -39,6 +50,7 @@ def bases_writer(bases, timestamp):
     for index in range(0, len(widths)):
         ws.set_column(index, index, widths[index])
 
+    # Autofit for dates is difficult
     ws.set_column(4, 5, 12)
 
     wb.close()

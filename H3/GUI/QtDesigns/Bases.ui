@@ -48,6 +48,13 @@
         </property>
        </widget>
       </item>
+      <item row="0" column="4">
+       <widget class="QPushButton" name="importButton">
+        <property name="text">
+         <string>Import</string>
+        </property>
+       </widget>
+      </item>
       <item row="1" column="0" colspan="6">
        <widget class="QTreeView" name="treeView">
         <property name="editTriggers">
@@ -58,13 +65,6 @@
         </property>
         <property name="allColumnsShowFocus">
          <bool>true</bool>
-        </property>
-       </widget>
-      </item>
-      <item row="0" column="4">
-       <widget class="QPushButton" name="importButton">
-        <property name="text">
-         <string>Import</string>
         </property>
        </widget>
       </item>

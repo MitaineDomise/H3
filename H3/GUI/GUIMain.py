@@ -5,6 +5,7 @@ import logging
 import datetime
 
 from PySide import QtGui, QtCore, QtUiTools
+
 from iso3166 import countries
 import pytz
 
@@ -404,7 +405,7 @@ class LoginBox:
             H3Core.login(username, password)
             if H3Core.internal_state["user"] == "ok":
                 self.login_box.accept()
-                self.gui.set_status(_("Successfully logged in as %(name)s") % {"name": username})
+                self.gui.set_status(_("Successfully logged in as {name}").format(name=username))
             elif H3Core.internal_state["user"] == "no_job":
                 message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("No active job contract"),
                                                 _("This user is currently not employed according to the local "
@@ -449,7 +450,7 @@ class H3MainGUI:
 
         syncbutton = QtGui.QPushButton(QtGui.QIcon(":/images/H3.png"), _("Sync"), self.root_window)
         # noinspection PyUnresolvedReferences
-        syncbutton.clicked.connect(H3Core.sync_up)
+        syncbutton.clicked.connect(self.sync)
 
         self.root_window.statusbar.addPermanentWidget(syncbutton)
 
@@ -478,9 +479,16 @@ class H3MainGUI:
         self.root_window.treeView.setFixedWidth(self.root_window.treeView.columnWidth(0) + 10)
         self.root_window.Actions.setFixedWidth(self.root_window.treeView.size().width() + 50)
 
-        self.selection_model = self.root_window.treeView.selectionModel()
+        action_selector = self.root_window.treeView.selectionModel()
 
-        self.selection_model.currentChanged.connect(self.ui_switcher)
+        # This allows keyboard navigation in the action bar
+        action_selector.currentChanged.connect(self.ui_switcher)
+        self.root_window.treeView.clicked.connect(self.ui_switcher)
+
+    def sync(self):
+        # This syncs local and remote DB then refreshes the current action menu by "clicking" it
+        H3Core.sync_up()
+        self.root_window.treeView.clicked.emit(self.root_window.treeView.currentIndex())
 
     @staticmethod
     def build_actions_menu():
@@ -589,10 +597,9 @@ class ManageBases:
 
         self.bases_tree_model = QtGui.QStandardItemModel()
         self.menu.treeView.setModel(self.bases_tree_model)
-        self.base_selection_model = self.menu.treeView.selectionModel()
         self.refresh_tree(H3Core.current_job_contract.work_base)
 
-        self.base_selection_model.currentChanged.connect(self.update_stats)
+        self.menu.treeView.clicked.connect(self.update_stats)
 
         self.menu.createButton.clicked.connect(self.create_base)
         self.menu.editButton.clicked.connect(self.edit_base)
@@ -613,7 +620,7 @@ class ManageBases:
         self.bases_tree_model.clear()
         hidden_root = self.bases_tree_model.invisibleRootItem()
 
-        queue_data = H3Core.get_queue()
+        queue_data = H3Core.read_table(Acd.SyncJournal)
         fresh = list()
         temp = list()
         for queue_item in queue_data:
@@ -678,15 +685,17 @@ class ManageBases:
             base_desc.setText(_("{name} - closed on {date}")
                               .format(name=base.full_name, date=base.closed_date))
         if base.code in fresh:
-            base_item.setFont(base_item.font().setItalic(True))
-            base_desc.setFont(base_desc.font().setItalic(True))
+            font = QtGui.QFont()
+            font.setBold(True)
+            base_item.setFont(font)
+            base_desc.setFont(font)
         if base.code in temp:
             base_item.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
             base_desc.setBackground(QtGui.QBrush(QtGui.QColor('pink')))
 
     @QtCore.Slot(int)
     def update_stats(self, _index):
-        row_index = self.base_selection_model.currentIndex()
+        row_index = self.menu.treeView.currentIndex()
         base_index = self.bases_tree_model.index(row_index.row(), 0, row_index.parent())
         self.selected_base = base_index.data(33) or self.bases_tree_model.invisibleRootItem().child(0).data(33)
         self.menu.statsGroupBox.setTitle(_("{base} stats").format(base=self.selected_base.identifier))

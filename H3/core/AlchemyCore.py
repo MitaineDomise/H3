@@ -463,11 +463,10 @@ class H3AlchemyCore:
         return result
 
     def export_bases(self):
-        timestamp = datetime.datetime.now().strftime('%c').replace('/', '-').replace(':', '.')
         local_session = self.SessionLocal()
         bases = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
         local_session.close()
-        filename = export.bases_writer(bases, timestamp)
+        filename = export.bases_writer(bases)
         return filename
 
     def get_queue(self):
@@ -556,7 +555,9 @@ def process_downloaded_updates(entries, records, local_session):
             Acd.detach(final_entry)
         local_session.add(final_entry)
         local_session.query(Acd.SyncJournal) \
-            .filter(Acd.SyncJournal.serial > 0, Acd.SyncJournal.serial < final_entry.serial) \
+            .filter(Acd.SyncJournal.serial > 0,
+                    Acd.SyncJournal.serial < final_entry.serial,
+                    Acd.SyncJournal.local_timestamp < datetime.datetime.utcnow() - datetime.timedelta(days=1)) \
             .delete()
         local_session.flush()
     return down_sync_status
