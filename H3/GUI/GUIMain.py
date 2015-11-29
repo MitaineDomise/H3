@@ -3,11 +3,14 @@ __author__ = 'Man'
 import sys
 import logging
 import datetime
+import locale
 
 from PySide import QtGui, QtCore, QtUiTools
 
 from iso3166 import countries
 import pytz
+import babel
+import babel.dates
 
 from H3.core import AlchemyCore
 from H3.core import AlchemyClassDefs as Acd
@@ -448,6 +451,8 @@ class H3MainGUI:
                              self.rect.height() * 2 / 3)
         self.root_window.setGeometry(rect2)
 
+        self.locale = babel.Locale.parse(locale.getdefaultlocale()[0], "_")
+
         syncbutton = QtGui.QPushButton(QtGui.QIcon(":/images/H3.png"), _("Sync"), self.root_window)
         # noinspection PyUnresolvedReferences
         syncbutton.clicked.connect(self.sync)
@@ -585,7 +590,8 @@ class ManageBases:
 
         self.countries_model = QtGui.QStandardItemModel()
         for c in countries:
-            item = QtGui.QStandardItem(_("{code} - {fullname}").format(code=c.alpha2, fullname=c.name))
+            localized_name = self.gui.locale.territories[c.alpha2]
+            item = QtGui.QStandardItem(_("{code} - {fullname}").format(code=c.alpha2, fullname=localized_name))
             item.setData(c, 33)
             self.countries_model.appendRow(item)
 
@@ -650,6 +656,7 @@ class ManageBases:
                 root_item = QtGui.QStandardItem(root_record.identifier)
                 root_desc = QtGui.QStandardItem(root_record.full_name)
                 root_item.setData(root_record, 33)  # includes the base object itself in the first custom data role
+                self.selected_base = root_record
                 root_child_no = hidden_root.rowCount()
                 hidden_root.setChild(root_child_no, 0, root_item)
                 hidden_root.setChild(root_child_no, 1, root_desc)
@@ -864,6 +871,7 @@ class ManageBases:
         tz_list = pytz.country_timezones(country[0:2])
         self.timezones_model.clear()
         for tz in tz_list:
+            tz = babel.dates.get_timezone_location(tz, locale=self.gui.locale)
             self.timezones_model.appendRow(QtGui.QStandardItem(tz))
 
 
