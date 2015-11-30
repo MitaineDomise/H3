@@ -718,8 +718,10 @@ class ManageBases:
                 self.menu.userNo.setText(_("Data unavailable without a connection to the remote DB"))
         if self.selected_base.closed_date and self.selected_base.closed_date <= datetime.date.today():
             self.menu.deleteButton.setEnabled(False)
+            self.menu.editButton.setEnabled(False)
         else:
             self.menu.deleteButton.setEnabled(True)
+            self.menu.editButton.setEnabled(True)
 
     def create_base(self, base=None):
         """
@@ -797,7 +799,8 @@ class ManageBases:
 
         edit_base_box.countryComboBox.highlighted[str].connect(self.update_timezones)
 
-        if not base:
+        # Receiving a QModelIndex from the "activated" signal
+        if not base or type(base) != Acd.WorkBase:
             base = self.selected_base
 
         edit_base_box.baseCodeLineEdit.setText(base.identifier)
@@ -822,7 +825,7 @@ class ManageBases:
             base.opened_date = edit_base_box.openingDateDateEdit.date().toPython()
             base.country = edit_base_box.countryComboBox.itemData(
                 edit_base_box.countryComboBox.currentIndex(), 33)[1]
-            base.time_zone = edit_base_box.timeZoneComboBox.currentText()
+            base.time_zone = edit_base_box.timeZoneComboBox.itemData(edit_base_box.timeZoneComboBox.currentIndex(), 33)
 
             if H3Core.update_base(base) == "OK":
                 self.refresh_tree(H3Core.current_job_contract.work_base)
@@ -871,8 +874,10 @@ class ManageBases:
         tz_list = pytz.country_timezones(country[0:2])
         self.timezones_model.clear()
         for tz in tz_list:
-            tz = babel.dates.get_timezone_location(tz, locale=self.gui.locale)
-            self.timezones_model.appendRow(QtGui.QStandardItem(tz))
+            locale_tz = babel.dates.get_timezone_location(tz, locale=self.gui.locale)
+            tz_item = QtGui.QStandardItem(locale_tz)
+            tz_item.setData(tz, 33)
+            self.timezones_model.appendRow(tz_item)
 
 
 def run():

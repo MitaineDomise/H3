@@ -4,6 +4,7 @@ import datetime
 import locale
 
 import xlsxwriter
+import xlsxwriter.utility
 import babel
 import babel.dates
 
@@ -16,7 +17,8 @@ def bases_writer(bases):
 
     filename = _("Bases exported {time}.xlsx").format(time=timestamp)
     wb = xlsxwriter.Workbook(filename)
-    ws = wb.add_worksheet(_("Bases"))
+    ws = wb.add_worksheet("Bases")
+    data_ws = wb.add_worksheet("Data")
 
     title = _("\nH3 Export Bases")
     date_time = _("Exported &D at &T")
@@ -25,7 +27,7 @@ def bases_writer(bases):
                   .format(title=title, date_time=date_time, page_count=page_count),
                   {'image_left': 'H3\GUI\QtDesigns\images\H3big.png'})
 
-    ws.set_margins(top=2)
+    ws.set_margins(top=1.6)
 
     # Format the excel dates to the locale-appropriate representation
     dates = wb.add_format({'num_format': loc.date_formats["short"].pattern})
@@ -45,7 +47,7 @@ def bases_writer(bases):
 
     widths = list()
     for i in range(0, len(header_row)):
-        widths.append(0)
+        widths.append(len(header_row[i]))
     row = list()
     for base in bases:
         row = list()
@@ -59,8 +61,17 @@ def bases_writer(bases):
         table_data.append(row)
         row_no += 1
 
+    j = 0
+    for base in bases:
+        data_ws.write_string(j, 0, base.code)
+        data_ws.write_string(j, 1, base.identifier)
+        j += 1
+
+    wb.define_name('DataTable', '=Data!$A:$B')
+
     ws.add_table(0, 0, len(table_data), len(row) - 1,
                  {'data': table_data,
+                  'name': "Bases",
                   'autofilter': False,
                   'style': 'Table Style Medium 15',
                   'columns':
@@ -72,25 +83,38 @@ def bases_writer(bases):
                        {'header': header_row[5]},
                        {'header': header_row[6]}]})
 
-    # Special cases for dates : second writing pass and fixed width
+    # Special cases for dates : second writing pass and fixed width.
+    # Use this pass to overwrite parent with a formula pulling the base name
     for line in range(1, len(table_data) + 1):
         ws.write(line, 3, table_data[line - 1][3], dates)
         ws.write(line, 4, table_data[line - 1][4], dates)
+        formula = '=VLOOKUP("{parent_code}",DataTable,2,FALSE)'.format(parent_code=table_data[line - 1][1])
+        ws.write_formula(line, 1, formula)
+        # Completely excessive data validation
+        # ws.data_validation(line, 1, line, 1, {'validate': 'list', 'source': '=$A$2:{cell_before}'
+        #                    .format(cell_before=xlsxwriter.utility.xl_rowcol_to_cell(line-1, 0, True, True))})
     widths[3] = len(header_row[3])
     widths[4] = len(header_row[4])
 
+    # TODO: Save timezones by a tzinfo ID not by full name (for i18n)
+
     # Calculate column widths
-    table_data.insert(0, header_row)
     for line in table_data:
         for col in range(0, len(line)):
-            if col != 3 and col != 4 and len(line[col]) > widths[col]:
+            if col not in [1, 3, 4] and len(line[col]) > widths[col]:
                 widths[col] = len(line[col])
+
+    # Since we used base identifiers for the parent column, copy that width if necessary
+    if widths[0] > widths[1]:
+        widths[1] = widths[0]
 
     for index in range(0, len(widths)):
         ws.set_column(index, index, widths[index])
 
     ws.print_area(0, 0, len(table_data) - 1, len(header_row) - 1)
     ws.fit_to_pages(1, 0)
+
+    data_ws.hide()
 
     wb.close()
     return filename
