@@ -6,7 +6,6 @@ import datetime
 import locale
 
 from PySide import QtGui, QtCore, QtUiTools
-
 from iso3166 import countries
 import pytz
 import babel
@@ -111,7 +110,6 @@ class SetupWizard:
         # TODO : Make the mail routing table for actions
         # TODO : Filter closed bases, banned users, finished JCs at download - Think harder about base closing: final ?
         # TODO : Switch to JSON for scope and limit
-        # TODO : Start Excel import / export work
         # TODO : start work on image DB
         # TODO : start work on versioning exploration
 
@@ -457,7 +455,14 @@ class H3MainGUI:
         # noinspection PyUnresolvedReferences
         syncbutton.clicked.connect(self.sync)
 
-        self.root_window.statusbar.addPermanentWidget(syncbutton)
+        empty = QtGui.QWidget()
+        empty.setSizePolicy(QtGui.QSizePolicy.Expanding, QtGui.QSizePolicy.Minimum)
+
+        self.root_window.toolBar.addWidget(empty)
+        self.root_window.toolBar.addWidget(syncbutton)
+
+        prog = QtGui.QProgressBar()
+        self.root_window.statusbar.addPermanentWidget(prog)
 
         self.root_window.show()
 
@@ -579,7 +584,7 @@ class ManageBases:
         """
         If called with action != None, jumps to the relevant action on the relevant base
         :param parent_h3_gui:
-        :param action: create, delete, edit
+        :param action: CREATE or UPDATE (no DELETES ever)
         :param base: Acd.WorkBase object
         :return:
         """
@@ -605,11 +610,11 @@ class ManageBases:
         self.menu.treeView.setModel(self.bases_tree_model)
         self.refresh_tree(H3Core.current_job_contract.work_base)
 
-        self.menu.treeView.clicked.connect(self.update_stats)
+        base_selection_model = self.menu.treeView.selectionModel()
+        base_selection_model.currentChanged.connect(self.update_stats)
 
         self.menu.createButton.clicked.connect(self.create_base)
         self.menu.editButton.clicked.connect(self.edit_base)
-        self.menu.deleteButton.clicked.connect(self.close_base)
         self.menu.exportButton.clicked.connect(self.export_bases)
 
         # Double-click / enter launches edit of the base
@@ -790,6 +795,9 @@ class ManageBases:
         :param base: an Acd.Workbase object
         :return:
         """
+        if not self.menu.editButton.isEnabled():
+            return
+
         edit_base_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/EditBaseBox.ui"),
                                                    self.gui.root_window)
 

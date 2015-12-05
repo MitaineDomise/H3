@@ -68,6 +68,13 @@
         </property>
        </widget>
       </item>
+      <item row="0" column="3">
+       <widget class="QPushButton" name="delButton">
+        <property name="text">
+         <string>DEL</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

@@ -34,7 +34,6 @@ def bases_writer(bases):
 
     row_no = 0
 
-    # TODO: pull parent description out of a hidden data worksheet
     table_data = list()
 
     header_row = [_("Identifier"),
@@ -95,8 +94,6 @@ def bases_writer(bases):
         #                    .format(cell_before=xlsxwriter.utility.xl_rowcol_to_cell(line-1, 0, True, True))})
     widths[3] = len(header_row[3])
     widths[4] = len(header_row[4])
-
-    # TODO: Save timezones by a tzinfo ID not by full name (for i18n)
 
     # Calculate column widths
     for line in table_data:

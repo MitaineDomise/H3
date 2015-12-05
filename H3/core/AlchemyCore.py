@@ -544,8 +544,7 @@ def process_downloaded_updates(entries, records, local_session):
                     local_session.add(record)
                 elif entry.type == "UPDATE":
                     local_session.merge(record)
-                elif entry.type == "DELETE":
-                    local_session.delete(record)
+
                 local_session.flush()
             except sqlalchemy.exc.SQLAlchemyError:
                 logger.exception(_("Failed to process downloaded update {type} {code}")
@@ -604,9 +603,6 @@ def attempt_upload(local_session, remote_session):
                     elif entry.type == "UPDATE":
                         timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
                         remote_session.merge(record)
-                    elif entry.type == "DELETE":
-                        timestamp = remote_session.execute(sqlalchemy.func.current_timestamp()).scalar()
-                        remote_session.delete(record)
 
                 # Manual increment of the global journal serial
                 journal_serial += 1
