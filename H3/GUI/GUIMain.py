@@ -277,6 +277,7 @@ class ServerWizardPage(QtGui.QWizardPage):
     Custom class with a specialized routine checking both DBs are reachable
     before the user can proceed
     """
+
     def __init__(self, parent):
         super(ServerWizardPage, self).__init__(parent)
 
@@ -294,6 +295,7 @@ class LoginWizardPage(QtGui.QWizardPage):
     and password is correct before the user can proceed.
     On init, will commit the database info from the previous page.
     """
+
     def __init__(self, parent):
         super(LoginWizardPage, self).__init__(parent)
 
@@ -319,6 +321,7 @@ class RecapWizardPage(QtGui.QWizardPage):
     and the relevant action the program will take.
     On init, will commit the user info from the previous page.
     """
+
     def __init__(self, parent):
         super(RecapWizardPage, self).__init__(parent)
 
@@ -616,6 +619,7 @@ class ManageBases:
         self.menu.createButton.clicked.connect(self.create_base)
         self.menu.editButton.clicked.connect(self.edit_base)
         self.menu.exportButton.clicked.connect(self.export_bases)
+        self.menu.importButton.clicked.connect(self.import_bases)
 
         # Double-click / enter launches edit of the base
         self.menu.treeView.activated.connect(self.edit_base)
@@ -875,7 +879,23 @@ class ManageBases:
                                         QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel)
         message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
         if message_box.exec_() == QtGui.QMessageBox.Ok:
-            AlchemyCore.open_exported(filename)
+            AlchemyCore.open_spreadsheet(filename)
+
+    def import_bases(self):
+        """
+        Simple "Open File" dialog to choose a location for the local DB.
+        """
+        filename = QtGui.QFileDialog.getOpenFileName(self.menu, _("Choose file to import"))
+        if filename != "":
+            result = H3Core.import_bases(filename[0])
+            if result:
+                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("Base data imported successfully"),
+                                                _("Base data imported successfully. Do you want to open the import file"
+                                                  "{log_name} for detailed info?").format(log_name=result),
+                                                QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel)
+                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+                if message_box.exec_() == QtGui.QMessageBox.Ok:
+                    AlchemyCore.open_spreadsheet(result)
 
     @QtCore.Slot(str)
     def update_timezones(self, country):

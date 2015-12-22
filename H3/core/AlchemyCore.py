@@ -12,7 +12,7 @@ import sqlalchemy.exc
 from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from . import AlchemyClassDefs as Acd
 from .AlchemyTemporal import versioned_session
-from ..XLLent import export
+from ..XLLent import XLexport, XLimport
 
 logger = logging.getLogger(__name__)
 
@@ -466,8 +466,19 @@ class H3AlchemyCore:
         local_session = self.SessionLocal()
         bases = AlchemyGeneric.read_table(local_session, Acd.WorkBase)
         local_session.close()
-        filename = export.bases_writer(bases)
+        filename = XLexport.bases_writer(bases)
         return filename
+
+    def import_bases(self, filename):
+        reader = XLimport.BasesReader(filename)
+        base = reader.feed_line()
+        while base:
+            result = self.create_base(base)
+            reader.write_line_result(result)
+            reader.advance()
+            base = reader.feed_line()
+        name = reader.save()
+        return name
 
     def get_queue(self):
         local_session = self.SessionLocal()
@@ -498,7 +509,7 @@ class H3AlchemyCore:
         return record
 
 
-def open_exported(filename):
+def open_spreadsheet(filename):
     """
     This is windows-only at the moment
     :param filename:

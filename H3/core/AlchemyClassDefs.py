@@ -28,7 +28,7 @@ class WorkBase(Base, Versioned):
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
     parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code', onupdate="cascade"))
-    identifier = sqlalchemy.Column(sqlalchemy.String, nullable=False)
+    identifier = sqlalchemy.Column(sqlalchemy.String, nullable=False, unique=True)
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
