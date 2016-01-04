@@ -650,6 +650,7 @@ class ManageBases:
         tree_row = list()
         next_row = list()
 
+        self.parents_model.clear()
         for p in base_data:
             item = QtGui.QStandardItem(_("{code} - {fullname}").format(code=p.identifier, fullname=p.full_name))
             item.setData(p, 33)
@@ -782,7 +783,8 @@ class ManageBases:
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.countryComboBox.itemData(
                                         create_base_box.countryComboBox.currentIndex(), 33)[1],
-                                    time_zone=create_base_box.timeZoneComboBox.currentText())
+                                    time_zone=create_base_box.timeZoneComboBox.itemData(
+                                        create_base_box.timeZoneComboBox.currentIndex(), 33))
 
             if H3Core.create_base(new_base) == "OK":
                 self.refresh_tree(H3Core.current_job_contract.work_base)

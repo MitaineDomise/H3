@@ -39,7 +39,6 @@ class WorkBase(Base, Versioned):
 
     parent_self_fk = sqlalchemy.orm.relationship('WorkBase',
                                                  foreign_keys=parent,
-                                                 passive_updates=False,
                                                  post_update=True)
 
     parent_base = sqlalchemy.orm.relationship('WorkBase',
@@ -94,14 +93,11 @@ class JobContract(Base):
     job_title = sqlalchemy.Column(sqlalchemy.String)
 
     base_fk = sqlalchemy.orm.relationship('WorkBase', backref=sqlalchemy.orm.backref('job_contracts'),
-                                          foreign_keys=work_base,
-                                          passive_updates=False)
+                                          foreign_keys=work_base)
     user_fk = sqlalchemy.orm.relationship('User', backref=sqlalchemy.orm.backref('job_contracts'),
-                                          foreign_keys=user,
-                                          passive_updates=False)
+                                          foreign_keys=user)
     job_fk = sqlalchemy.orm.relationship('Job', backref=sqlalchemy.orm.backref('job_contracts'),
-                                         foreign_keys=job_code,
-                                         passive_updates=False)
+                                         foreign_keys=job_code)
 
 
 class Action(Base):
@@ -167,18 +163,16 @@ class AssignedAction(Base):
     # A Job contract. Not a FK because local may not know it.
     delegated_from = sqlalchemy.Column(sqlalchemy.String, default=None)
 
-    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code'))
+    action = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('actions.code', onupdate="cascade"))
     assigned_to = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('job_contracts.code', onupdate="cascade"))
     limits = sqlalchemy.Column(sqlalchemy.String)  # JSON limiting sign-off value per-project, base, contract...
 
     job_contract_fk = sqlalchemy.orm.relationship('JobContract',
                                                   backref=sqlalchemy.orm.backref('assigned_actions'),
-                                                  passive_updates="False",
                                                   foreign_keys=assigned_to)
 
     action_fk = sqlalchemy.orm.relationship('Action',
                                             backref=sqlalchemy.orm.backref('assigned_actions'),
-                                            passive_updates="False",
                                             foreign_keys=action)
 
 

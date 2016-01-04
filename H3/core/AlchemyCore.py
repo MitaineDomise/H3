@@ -386,9 +386,12 @@ class H3AlchemyCore:
         elif result == "success":
             local_session.commit()
             remote_session.commit()
-            if self.rebase_sync_down(local_session, remote_session) == "success":
+            result2 = self.rebase_sync_down(local_session, remote_session)
+            if result2 == "success":
                 local_session.commit()
                 remote_session.commit()
+            elif result2 == "no_new_updates":
+                logger.debug(_("Sync up succeeded, no new updates from server"))
             else:
                 logger.error(_("Sync up succeeded but error downloading updates"))
         local_session.close()
