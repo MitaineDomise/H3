@@ -925,6 +925,8 @@ class ImportBases:
             self.model.appendRow(line_list)
 
         self.import_box.tableView.setModel(self.model)
+        self.import_box.tableView.resizeColumnsToContents()
+        self.import_box.resize(self.import_box.size())
         self.import_box.pushButton.clicked.connect(self.import_bases)
 
         self.import_box.exec_()
