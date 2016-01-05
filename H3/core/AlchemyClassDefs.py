@@ -2,8 +2,9 @@ __author__ = 'Man'
 
 import datetime
 
-import sqlalchemy.orm
+import sqlalchemy
 import sqlalchemy.ext.declarative
+import sqlalchemy.orm
 import sqlalchemy.orm.session
 
 from .AlchemyTemporal import Versioned
@@ -27,8 +28,8 @@ class WorkBase(Base, Versioned):
     base = sqlalchemy.Column(sqlalchemy.String, default="BASE-1")
     period = sqlalchemy.Column(sqlalchemy.String, default='PERMANENT')
 
-    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code', onupdate="cascade"))
     identifier = sqlalchemy.Column(sqlalchemy.String, nullable=False, unique=True)
+    parent = sqlalchemy.Column(sqlalchemy.String, sqlalchemy.ForeignKey('bases.code', onupdate="cascade"))
     full_name = sqlalchemy.Column(sqlalchemy.String)
 
     opened_date = sqlalchemy.Column(sqlalchemy.Date)
@@ -44,6 +45,7 @@ class WorkBase(Base, Versioned):
     parent_base = sqlalchemy.orm.relationship('WorkBase',
                                               remote_side=code,
                                               single_parent=True)
+
 
 class User(Base, Versioned):
     """
@@ -65,8 +67,8 @@ class User(Base, Versioned):
     first_name = sqlalchemy.Column(sqlalchemy.String)
     last_name = sqlalchemy.Column(sqlalchemy.String)
 
-    created_date = sqlalchemy.Column(sqlalchemy.Date)
-    banned_date = sqlalchemy.Column(sqlalchemy.Date)
+    created_date = sqlalchemy.Column(sqlalchemy.Date, sqlalchemy.CheckConstraint('created_date<banned_date'))
+    banned_date = sqlalchemy.Column(sqlalchemy.Date, sqlalchemy.CheckConstraint('banned_date>created_date'))
 
 
 class JobContract(Base):

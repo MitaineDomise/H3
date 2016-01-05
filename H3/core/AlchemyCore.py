@@ -1,16 +1,17 @@
 __author__ = 'Man'
 
 import configparser
-import logging
 import datetime
-import os
 import json
+import logging
+import os
 
-import sqlalchemy.orm
+import sqlalchemy
 import sqlalchemy.exc
+import sqlalchemy.orm
 
-from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from . import AlchemyClassDefs as Acd
+from . import AlchemyLocal, AlchemyRemote, AlchemyGeneric
 from .AlchemyTemporal import versioned_session
 from ..XLLent import XLexport, XLimport
 
@@ -472,16 +473,8 @@ class H3AlchemyCore:
         filename = XLexport.bases_writer(bases)
         return filename
 
-    def import_bases(self, filename):
-        reader = XLimport.BasesReader(filename)
-        base = reader.feed_line()
-        while base:
-            result = self.create_base(base)
-            reader.write_line_result(result)
-            reader.advance()
-            base = reader.feed_line()
-        name = reader.save()
-        return name
+    def import_excel(self, filename):
+        return XLimport.data_reader(filename)
 
     def get_queue(self):
         local_session = self.SessionLocal()
@@ -548,7 +541,7 @@ def process_downloaded_updates(entries, records, local_session):
     :rtype : object
     """
     down_sync_status = "success"
-    final_entry = None
+    fresh_entries = list()
 
     if entries and records:
         for entry, record in zip(entries, records):
@@ -564,12 +557,15 @@ def process_downloaded_updates(entries, records, local_session):
                 logger.exception(_("Failed to process downloaded update {type} {code}")
                                  .format(type=entry.type, code=record.code))
                 down_sync_status = "error"
-            final_entry = entry
-            Acd.detach(final_entry)
-        local_session.add(final_entry)
+            # download entries newer than 1 day to the local Journal
+            if entry.processed_timestamp > datetime.datetime.utcnow() - datetime.timedelta(days=1):
+                fresh_entries.append(entry)
+        for fresh_entry in fresh_entries:
+            Acd.detach(fresh_entry)
+            local_session.add(fresh_entry)
+        # Delete entries from previous syncs that are older than 1 day
         local_session.query(Acd.SyncJournal) \
             .filter(Acd.SyncJournal.serial > 0,
-                    Acd.SyncJournal.serial < final_entry.serial,
                     Acd.SyncJournal.local_timestamp < datetime.datetime.utcnow() - datetime.timedelta(days=1)) \
             .delete()
         local_session.flush()

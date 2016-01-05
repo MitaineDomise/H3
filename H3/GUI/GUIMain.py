@@ -1,18 +1,18 @@
 __author__ = 'Man'
 
-import sys
-import logging
 import datetime
 import locale
+import logging
+import sys
 
-from PySide import QtGui, QtCore, QtUiTools
-from iso3166 import countries
-import pytz
 import babel
 import babel.dates
+import pytz
+from PySide import QtGui, QtCore, QtUiTools
+from iso3166 import countries
 
-from H3.core import AlchemyCore
 from H3.core import AlchemyClassDefs as Acd
+from H3.core import AlchemyCore
 
 H3Core = AlchemyCore.H3AlchemyCore()
 
@@ -98,6 +98,7 @@ class SetupWizard:
         elif H3Core.internal_state["user"] == "remote":
             H3Core.remote_login(username, password)
         H3Core.initial_setup()
+        self.gui.set_status(_("Initial data downloaded and ready"))
 
     def check_user(self):
         """
@@ -191,7 +192,7 @@ class SetupWizard:
         Simple "Open File" dialog to choose a location for the local DB.
         """
         filename = QtGui.QFileDialog.getSaveFileName(self.wizard, _("Choose local DB file location"))
-        if filename != "":
+        if filename[0] != "":
             self.wizard.localAddress.setText(filename[0])
 
     def check_local(self):
@@ -501,6 +502,7 @@ class H3MainGUI:
     def sync(self):
         # This syncs local and remote DB then refreshes the current action menu by "clicking" it
         H3Core.sync_up()
+        self.set_status(_("Data synchronized with the main DB"))
         self.root_window.treeView.clicked.emit(self.root_window.treeView.currentIndex())
 
     @staticmethod
@@ -573,6 +575,7 @@ class H3MainGUI:
     def set_status(self, status_string):
         """
         Displays a status message for 2 seconds in the status bar.
+        :param status_string: the message to display
         """
         self.root_window.statusbar.showMessage(status_string, 2000)
 
@@ -619,7 +622,7 @@ class ManageBases:
         self.menu.createButton.clicked.connect(self.create_base)
         self.menu.editButton.clicked.connect(self.edit_base)
         self.menu.exportButton.clicked.connect(self.export_bases)
-        self.menu.importButton.clicked.connect(self.import_bases)
+        self.menu.importButton.clicked.connect(self.import_box)
 
         # Double-click / enter launches edit of the base
         self.menu.treeView.activated.connect(self.edit_base)
@@ -761,8 +764,7 @@ class ManageBases:
                 create_base_box.countryComboBox.findText(base.country, QtCore.Qt.MatchStartsWith))
             self.update_timezones(base.country)
             create_base_box.timeZoneComboBox.setCurrentIndex(
-                create_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly)
-            )
+                    create_base_box.timeZoneComboBox.findData(base.time_zone, 33, QtCore.Qt.MatchExactly))
         else:
             create_base_box.parentComboBox.setCurrentIndex(
                 create_base_box.parentComboBox.findText(self.selected_base.identifier, QtCore.Qt.MatchStartsWith))
@@ -774,11 +776,12 @@ class ManageBases:
         if create_base_box.exec_() == QtGui.QDialog.Accepted:
             # noinspection PyArgumentList
 
-            new_base = Acd.WorkBase(base="BASE-1",
-                                    period="PERMANENT",
-                                    parent=create_base_box.parentComboBox.itemData(
-                                        create_base_box.parentComboBox.currentIndex(), 33).code or None,
+            new_base = Acd.WorkBase(base='BASE-1',
+                                    period='PERMANENT',
                                     identifier=create_base_box.baseCodeLineEdit.text(),
+                                    # Next line "or None" makes a parent-less base creation fail - unnecessary
+                                    parent=create_base_box.parentComboBox.itemData(
+                                            create_base_box.parentComboBox.currentIndex(), 33).code,
                                     full_name=create_base_box.fullNameLineEdit.text(),
                                     opened_date=create_base_box.openingDateDateEdit.date().toPython(),
                                     country=create_base_box.countryComboBox.itemData(
@@ -829,7 +832,7 @@ class ManageBases:
             edit_base_box.countryComboBox.findText(base.country, QtCore.Qt.MatchStartsWith))
         self.update_timezones(base.country)
         edit_base_box.timeZoneComboBox.setCurrentIndex(
-            edit_base_box.timeZoneComboBox.findText(base.time_zone, QtCore.Qt.MatchExactly))
+                edit_base_box.timeZoneComboBox.findData(base.time_zone, 33, QtCore.Qt.MatchExactly))
 
         if edit_base_box.exec_() == QtGui.QDialog.Accepted:
             base.parent = edit_base_box.parentComboBox.itemData(
@@ -883,21 +886,17 @@ class ManageBases:
         if message_box.exec_() == QtGui.QMessageBox.Ok:
             AlchemyCore.open_spreadsheet(filename)
 
-    def import_bases(self):
+    def import_box(self):
         """
-        Simple "Open File" dialog to choose a location for the local DB.
+        Starts with "Open File" dialog to choose a location for the local DB
+        Then presents a preview of data to be imported; the Table View gives feedback on success of import
         """
         filename = QtGui.QFileDialog.getOpenFileName(self.menu, _("Choose file to import"))
-        if filename != "":
-            result = H3Core.import_bases(filename[0])
-            if result:
-                message_box = QtGui.QMessageBox(QtGui.QMessageBox.Information, _("Base data imported successfully"),
-                                                _("Base data imported successfully. Do you want to open the import file"
-                                                  "{log_name} for detailed info?").format(log_name=result),
-                                                QtGui.QMessageBox.Ok | QtGui.QMessageBox.Cancel)
-                message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
-                if message_box.exec_() == QtGui.QMessageBox.Ok:
-                    AlchemyCore.open_spreadsheet(result)
+        raw_data = list()
+        if filename[0] != "":
+            raw_data = H3Core.import_excel(filename[0])
+        ImportBases(self.gui, raw_data)
+        self.refresh_tree(H3Core.current_job_contract.work_base)
 
     @QtCore.Slot(str)
     def update_timezones(self, country):
@@ -908,6 +907,52 @@ class ManageBases:
             tz_item = QtGui.QStandardItem(locale_tz)
             tz_item.setData(tz, 33)
             self.timezones_model.appendRow(tz_item)
+
+
+class ImportBases:
+    def __init__(self, gui, raw_data):
+        self.import_box = QtUiTools.QUiLoader().load(QtCore.QFile("H3/GUI/QtDesigns/Import.ui"),
+                                                     gui.root_window)
+
+        self.model = QtGui.QStandardItemModel(0, 8)
+        self.raw_data = raw_data
+
+        for line in raw_data:
+            line_list = list()
+            for cell in line:
+                item = QtGui.QStandardItem(str(cell))
+                line_list.append(item)
+            self.model.appendRow(line_list)
+
+        self.import_box.tableView.setModel(self.model)
+        self.import_box.pushButton.clicked.connect(self.import_bases)
+
+        self.import_box.exec_()
+
+    def import_bases(self):
+        cursor = 0
+        for line in self.raw_data:
+            # noinspection PyArgumentList
+            base = Acd.WorkBase(base='BASE-1',
+                                period='PERMANENT',
+                                identifier=line[1],
+                                parent=line[2],
+                                full_name=line[3],
+                                opened_date=line[4],
+                                closed_date=line[5],
+                                country=line[6],
+                                time_zone=line[7])
+            result = H3Core.create_base(base)
+            if result == "OK":
+                self.model.setItem(cursor, 8, QtGui.QStandardItem(_("Success")))
+                for i in range(0, 8):
+                    self.model.item(cursor, i).setBackground(QtGui.QBrush(QtGui.QColor('green')))
+            elif result == "ERR":
+                self.model.setItem(cursor, 8, QtGui.QStandardItem(_("Fail")))
+                for i in range(0, 8):
+                    self.model.item(cursor, i).setBackground(QtGui.QBrush(QtGui.QColor('red')))
+            cursor += 1
+        self.import_box.pushButton.setEnabled(False)
 
 
 def run():
