@@ -1,5 +1,7 @@
 <RCC>
   <qresource>
+    <file>images/H3Chrono.png</file>
+    <file>images/H3XL.png</file>
     <file>images/oxfam.jpg</file>
     <file>images/H3.png</file>
     <file>images/H3.svg</file>

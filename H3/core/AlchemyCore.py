@@ -690,7 +690,6 @@ def ping_local(location):
     return result
 
 
-
 def ping_remote(address):
     temp_remote_db = AlchemyRemote.H3AlchemyRemoteDB(address)
     if temp_remote_db.login('reader', 'weak'):

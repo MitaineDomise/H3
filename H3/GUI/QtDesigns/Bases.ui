@@ -41,21 +41,40 @@
       <string>Bases</string>
      </property>
      <layout class="QGridLayout" name="gridLayout">
-      <item row="0" column="4">
-       <widget class="QPushButton" name="exportButton">
-        <property name="text">
-         <string>Export</string>
-        </property>
-       </widget>
-      </item>
       <item row="0" column="3">
        <widget class="QPushButton" name="importButton">
         <property name="text">
-         <string>Import</string>
+         <string>   Import</string>
+        </property>
+        <property name="icon">
+         <iconset resource="H3.qrc">
+          <normaloff>:/images/H3XL.png</normaloff>:/images/H3XL.png</iconset>
         </property>
        </widget>
       </item>
-      <item row="1" column="0" colspan="5">
+      <item row="0" column="4">
+       <widget class="QPushButton" name="exportButton">
+        <property name="text">
+         <string>   Export</string>
+        </property>
+        <property name="icon">
+         <iconset resource="H3.qrc">
+          <normaloff>:/images/H3XL.png</normaloff>:/images/H3XL.png</iconset>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="5">
+       <widget class="QPushButton" name="pushButton">
+        <property name="text">
+         <string>   History</string>
+        </property>
+        <property name="icon">
+         <iconset resource="H3.qrc">
+          <normaloff>:/images/H3Chrono.png</normaloff>:/images/H3Chrono.png</iconset>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0" colspan="6">
        <widget class="QTreeView" name="treeView">
         <property name="editTriggers">
          <set>QAbstractItemView::NoEditTriggers</set>

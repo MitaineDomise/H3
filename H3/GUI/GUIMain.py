@@ -623,6 +623,7 @@ class ManageBases:
         self.menu.editButton.clicked.connect(self.edit_base)
         self.menu.exportButton.clicked.connect(self.export_bases)
         self.menu.importButton.clicked.connect(self.import_box)
+        self.menu.historyButton.clicked.connect(self.query_history)
 
         # Double-click / enter launches edit of the base
         self.menu.treeView.activated.connect(self.edit_base)
@@ -897,6 +898,18 @@ class ManageBases:
             raw_data = H3Core.import_excel(filename[0])
         ImportBases(self.gui, raw_data)
         self.refresh_tree(H3Core.current_job_contract.work_base)
+
+    def query_history(self):
+        if not AlchemyCore.ping_remote(H3Core.remote_db.location):
+            message_box = QtGui.QMessageBox(QtGui.QMessageBox.Warning, _("No connection to remote DB"),
+                                            _(
+                                                "This feature needs online connectivity to work. Make sure you are connected "
+                                                "to the internet, and contact your focal point if needed"),
+                                            QtGui.QMessageBox.Ok)
+            message_box.setWindowIcon(QtGui.QIcon(":/images/H3.png"))
+            message_box.exec_()
+        else:
+            pass
 
     @QtCore.Slot(str)
     def update_timezones(self, country):
